@@ -14,9 +14,11 @@ const studentSchema = new mongoose.Schema(
       required: true,
       enum: ["Level 100", "Level 200", "Level 300", "Level 400", "Level 500"],
     },
+    department: { type: String, required: true, trim: true },
     guardianName: { type: String, required: true, trim: true },
     guardianPhone: { type: String, required: true, trim: true },
     guardianEmail: { type: String, required: true, trim: true },
+    profileImage: { type: String, trim: true, default: "" },
     faceDescriptor: {
       type: [Number],
       default: undefined,

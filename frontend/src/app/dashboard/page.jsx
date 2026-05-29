@@ -107,6 +107,7 @@ export default function DashboardPage() {
     return (report.rows || []).slice(0, 8).map((row) => ({
       student: row.studentName,
       routeId: row.studentId,
+      profileImage: row.profileImage || "",
       level: row.level || row.grade || "N/A",
       time: row.checkInTime || "--:--",
       status: (row.status || "Absent").toLowerCase(),
@@ -249,9 +250,27 @@ export default function DashboardPage() {
               {recentActivity.map((row, index) => (
                 <tr key={`${row.routeId || row.student}-${index}`} className="hover:bg-slate-50/60">
                   <td className="px-6 py-3 font-medium text-slate-800">
-                    <Link href={`/students/${row.routeId}`} className="transition hover:text-sky-700">
-                      {row.student}
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      {row.profileImage ? (
+                        <img
+                          src={row.profileImage}
+                          alt={`${row.student} profile`}
+                          className="h-9 w-9 rounded-full object-cover ring-2 ring-white"
+                        />
+                      ) : (
+                        <div className="grid h-9 w-9 place-items-center rounded-full bg-linear-to-br from-slate-200 to-slate-400 text-xs font-semibold text-slate-700">
+                          {row.student
+                            .split(" ")
+                            .map((part) => part[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                      <Link href={`/students/${row.routeId}`} className="transition hover:text-sky-700">
+                        {row.student}
+                      </Link>
+                    </div>
                   </td>
                   <td className="px-6 py-3 text-slate-500">{row.level}</td>
                   <td className="px-6 py-3 tabular-nums text-slate-400">{row.time}</td>

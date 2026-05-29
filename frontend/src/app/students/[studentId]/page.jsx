@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ChevronLeft,
   Download,
+  Pencil,
   Mail,
   Phone,
   RotateCcw,
@@ -23,15 +24,58 @@ const dayStyles = {
   neutral: "bg-slate-100 text-slate-400",
 };
 
-function buildMonthMap(status) {
+const statusTextStyles = {
+  present: "text-emerald-600",
+  absent: "text-rose-600",
+  late: "text-amber-600",
+  neutral: "text-slate-600",
+};
+
+const statusBadgeStyles = {
+  present: "bg-emerald-100 text-emerald-700",
+  absent: "bg-rose-100 text-rose-700",
+  late: "bg-amber-100 text-amber-700",
+  neutral: "bg-slate-100 text-slate-700",
+};
+
+function toLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function buildMonthMap(monthRows, daysInMonth, today) {
   const map = {};
-  for (let day = 1; day <= 31; day += 1) {
-    map[day] = "neutral";
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    if (day > today) {
+      map[day] = "neutral";
+      continue;
+    }
+
+    const row = monthRows[day];
+    map[day] = (row?.status || "Absent").toLowerCase();
   }
 
-  const today = new Date().getDate();
-  map[today] = (status || "Absent").toLowerCase();
   return map;
+}
+
+function buildMonthDateKeys(baseDate = new Date()) {
+  const year = baseDate.getFullYear();
+  const monthIndex = baseDate.getMonth();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const date = new Date(year, monthIndex, day);
+    const dateKey = toLocalDateKey(date);
+
+    return {
+      day,
+      dateKey,
+    };
+  });
 }
 
 function initials(name) {
@@ -52,6 +96,7 @@ export default function StudentDetailPage() {
 
   const [student, setStudent] = useState(null);
   const [todayRow, setTodayRow] = useState(null);
+  const [monthRows, setMonthRows] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -66,7 +111,47 @@ export default function StudentDetailPage() {
     guardianName: "",
     guardianPhone: "",
     guardianEmail: "",
+    profileImage: "",
   });
+
+  const buildProfileImage = async (file) => {
+    if (!file || !file.type.startsWith("image/")) {
+      throw new Error("Please choose a valid image file.");
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        const image = new Image();
+
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          const size = 320;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+
+          if (!ctx) {
+            reject(new Error("Unable to prepare profile picture."));
+            return;
+          }
+
+          const sourceSize = Math.min(image.width, image.height);
+          const offsetX = (image.width - sourceSize) / 2;
+          const offsetY = (image.height - sourceSize) / 2;
+          ctx.drawImage(image, offsetX, offsetY, sourceSize, sourceSize, 0, 0, size, size);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+
+        image.onerror = () => reject(new Error("Unable to read selected image."));
+        image.src = String(reader.result || "");
+      };
+
+      reader.onerror = () => reject(new Error("Unable to read selected image."));
+      reader.readAsDataURL(file);
+    });
+  };
 
   const loadStudentDetail = async () => {
     if (!studentId) {
@@ -77,18 +162,29 @@ export default function StudentDetailPage() {
     setError("");
 
     try {
-      const dateKey = new Date().toISOString().slice(0, 10);
-      const [studentResponse, dailyResponse] = await Promise.all([
+      const dateKey = toLocalDateKey(new Date());
+      const monthDates = buildMonthDateKeys(new Date());
+      const [studentResponse, dailyResponse, ...monthlyResponses] = await Promise.all([
         fetchStudentById(studentId),
         fetchDailyAttendance(dateKey),
+        ...monthDates.map(({ dateKey: monthlyDateKey }) => fetchDailyAttendance(monthlyDateKey)),
       ]);
 
       const loadedStudent = studentResponse?.data || null;
       const rows = Array.isArray(dailyResponse?.data?.rows) ? dailyResponse.data.rows : [];
       const row = rows.find((item) => item.studentId === studentId) || null;
+      const nextMonthRows = monthDates.reduce((acc, { day }, index) => {
+        const response = monthlyResponses[index];
+        const dailyRows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
+        const matchedRow = dailyRows.find((item) => item.studentId === studentId) || null;
+
+        acc[day] = matchedRow;
+        return acc;
+      }, {});
 
       setStudent(loadedStudent);
       setTodayRow(row);
+      setMonthRows(nextMonthRows);
 
       const fullName = loadedStudent?.fullName || "";
       const [splitFirst = "", ...rest] = fullName.split(" ");
@@ -103,6 +199,7 @@ export default function StudentDetailPage() {
         guardianName: loadedStudent?.guardianName || "",
         guardianPhone: loadedStudent?.guardianPhone || "",
         guardianEmail: loadedStudent?.guardianEmail || "",
+        profileImage: loadedStudent?.profileImage || "",
       });
     } catch (loadError) {
       setError(loadError.message || "Unable to load student details.");
@@ -121,6 +218,30 @@ export default function StudentDetailPage() {
       ...current,
       [name]: value,
     }));
+  };
+
+  const handleProfileImageChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setSaveSuccess("");
+      setSaveError("");
+      const profileImage = await buildProfileImage(file);
+      await updateStudent(studentId, {
+        profileImage,
+      });
+      await loadStudentDetail();
+      setSaveSuccess("Profile picture updated successfully.");
+    } catch (imageError) {
+      setSaveError(imageError.message || "Unable to process profile picture.");
+      setSaveSuccess("");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveChanges = async () => {
@@ -155,6 +276,7 @@ export default function StudentDetailPage() {
         guardianName: formData.guardianName.trim(),
         guardianPhone: formData.guardianPhone.trim(),
         guardianEmail: formData.guardianEmail.trim(),
+        profileImage: formData.profileImage,
       });
 
       await loadStudentDetail();
@@ -169,10 +291,16 @@ export default function StudentDetailPage() {
   };
 
   const attendanceMap = useMemo(() => {
-    return buildMonthMap(todayRow?.status);
-  }, [todayRow?.status]);
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return buildMonthMap(monthRows, daysInMonth, now.getDate());
+  }, [monthRows]);
 
-  const monthDays = useMemo(() => Array.from({ length: 31 }, (_, index) => index + 1), []);
+  const monthDays = useMemo(() => {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => index + 1);
+  }, []);
 
   if (loading) {
     return (
@@ -199,6 +327,8 @@ export default function StudentDetailPage() {
     : student.fullName || "Unknown Student";
   const avatar = initials(fullName);
   const status = todayRow?.status || "Absent";
+  const normalizedStatus = String(status).toLowerCase();
+  const profileImage = isEditMode ? formData.profileImage : student.profileImage;
   const guardianName = student.guardianName || "Not provided";
   const guardianPhone = student.guardianPhone || "Not provided";
   const guardianEmail = student.guardianEmail || "Not provided";
@@ -227,16 +357,34 @@ export default function StudentDetailPage() {
             <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
               <div className="flex flex-col items-center text-center">
                 <div className="relative">
-                  <div className="grid h-20 w-20 place-items-center rounded-full bg-linear-to-br from-slate-200 via-sky-100 to-slate-400 text-2xl font-semibold text-slate-700 ring-4 ring-white shadow-sm">
-                    {avatar}
-                  </div>
-                  <span className="absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-emerald-500 text-white ring-4 ring-white">
-                    <BadgeCheck className="h-3.5 w-3.5" />
-                  </span>
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt={`${fullName} profile`}
+                      className="h-20 w-20 rounded-full object-cover ring-4 ring-white shadow-sm"
+                    />
+                  ) : (
+                    <div className="grid h-20 w-20 place-items-center rounded-full bg-linear-to-br from-slate-200 via-sky-100 to-slate-400 text-2xl font-semibold text-slate-700 ring-4 ring-white shadow-sm">
+                      {avatar}
+                    </div>
+                  )}
+                  <label className="absolute bottom-1 right-1 grid h-7 w-7 cursor-pointer place-items-center rounded-full bg-sky-700 text-white ring-4 ring-white transition hover:bg-sky-600">
+                    <Pencil className="h-3.5 w-3.5" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfileImageChange}
+                      className="hidden"
+                      disabled={saving}
+                    />
+                  </label>
                 </div>
 
                 <h1 className="mt-4 text-xl font-semibold text-slate-900">{fullName}</h1>
                 <p className="mt-1 text-sm text-slate-500">Student ID: {student.studentId}</p>
+                <p className="mt-4 text-xs text-slate-500">
+                  {saving ? "Updating photo..." : "Use the edit icon on the photo to upload or replace the profile image."}
+                </p>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-3">
@@ -246,7 +394,7 @@ export default function StudentDetailPage() {
                 </div>
                 <div className="rounded-xl bg-slate-50 px-4 py-3 text-center">
                   <p className="text-[11px] uppercase tracking-wide text-slate-400">Today Status</p>
-                  <p className="mt-1 text-base font-semibold text-emerald-600">{status}</p>
+                  <p className={`mt-1 text-base font-semibold ${statusTextStyles[normalizedStatus] || statusTextStyles.neutral}`}>{status}</p>
                 </div>
               </div>
             </section>
@@ -467,7 +615,7 @@ export default function StudentDetailPage() {
                   <ShieldCheck className="h-4 w-4 text-sky-700" />
                   Attendance Record Status
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{status}</span>
+                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusBadgeStyles[normalizedStatus] || statusBadgeStyles.neutral}`}>{status}</span>
               </div>
 
               <div className="mt-2 grid gap-4 rounded-2xl bg-slate-50 p-4 md:grid-cols-[100px_minmax(0,1fr)_180px]">
@@ -490,7 +638,7 @@ export default function StudentDetailPage() {
                   </div>
                   <div>
                     <p className="text-sm text-slate-500">Record Date</p>
-                    <p className="font-semibold text-slate-900">{todayRow?.date || new Date().toISOString().slice(0, 10)}</p>
+                    <p className="font-semibold text-slate-900">{todayRow?.date || toLocalDateKey(new Date())}</p>
                   </div>
                 </div>
 

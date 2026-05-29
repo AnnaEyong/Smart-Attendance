@@ -17,9 +17,11 @@ const normalizeStudentPayload = (body = {}) => {
     email: body.email,
     phone: body.phone || "",
     level: body.level,
+    department: body.department,
     guardianName: body.guardianName,
     guardianPhone: body.guardianPhone,
     guardianEmail: body.guardianEmail,
+    profileImage: body.profileImage || "",
     faceDescriptor: body.faceDescriptor,
   };
 };

@@ -222,6 +222,7 @@ export default function StudentsPage() {
         status: "Good",
         tone: "good",
         avatar: initials(name),
+        profileImage: student.profileImage || "",
       };
     });
   }, [backendStudents]);
@@ -258,7 +259,7 @@ export default function StudentsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700 shadow-xs">
-              <Sparkles className="h-3.5 w-3.5" />
+              {/* <Sparkles className="h-3.5 w-3.5" /> */}
               Student Management
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
@@ -391,9 +392,17 @@ export default function StudentsPage() {
                       <tr key={student.id} className="border-b border-dashed border-sky-100 text-sm last:border-b-0">
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="grid h-9 w-9 place-items-center rounded-full bg-linear-to-br from-slate-200 to-slate-400 text-xs font-semibold text-slate-700">
-                              {student.avatar}
-                            </div>
+                            {student.profileImage ? (
+                              <img
+                                src={student.profileImage}
+                                alt={`${student.name} profile`}
+                                className="h-9 w-9 rounded-full object-cover ring-2 ring-white"
+                              />
+                            ) : (
+                              <div className="grid h-9 w-9 place-items-center rounded-full bg-linear-to-br from-slate-200 to-slate-400 text-xs font-semibold text-slate-700">
+                                {student.avatar}
+                              </div>
+                            )}
                             <div>
                               <Link href={`/students/${student.routeId || studentSlug(student.name)}`} className="font-medium text-slate-800 transition hover:text-sky-700">
                                 {student.name}

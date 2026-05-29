@@ -11,6 +11,7 @@ const studentCreateSchema = z
     email: z.string().email(),
     phone: z.string().optional().or(z.literal("")),
     level: z.enum(["Level 100", "Level 200", "Level 300", "Level 400", "Level 500"]),
+    department: z.string().min(1),
     guardianName: z.string().min(1),
     guardianPhone: z.string().min(1),
     guardianEmail: z.string().email(),

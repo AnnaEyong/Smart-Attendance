@@ -19,7 +19,10 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(payload?.message || "Request failed");
+    const validationMessage = Array.isArray(payload?.path) && payload.path.length > 0
+      ? payload.path[0]?.message
+      : null;
+    throw new Error(validationMessage || payload?.message || "Request failed");
   }
 
   return payload;
@@ -61,6 +64,10 @@ export function createStudent(payload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function fetchDepartments() {
+  return request("/department");
 }
 
 export function fetchStudents() {

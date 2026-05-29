@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { X, Shield, Camera, Check, AlertCircle, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createStudent } from "@/lib/api";
+import { createStudent, fetchDepartments } from "@/lib/api";
 
 export default function RegisterStudentModal() {
   const router = useRouter();
@@ -17,7 +17,7 @@ export default function RegisterStudentModal() {
     email: "",
     phone: "",
     grade: "",
-    section: "",
+    department: "",
     dateOfBirth: "",
     guardianName: "",
     guardianPhone: "",
@@ -25,6 +25,9 @@ export default function RegisterStudentModal() {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [departments, setDepartments] = useState([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [videoReady, setVideoReady] = useState(false);
@@ -37,6 +40,23 @@ export default function RegisterStudentModal() {
     expression: false,
     eyes: false,
   });
+
+  useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        setDepartmentsLoading(true);
+        const response = await fetchDepartments();
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        setDepartments(rows);
+      } catch {
+        setDepartments([]);
+      } finally {
+        setDepartmentsLoading(false);
+      }
+    };
+
+    loadDepartments();
+  }, []);
 
   useEffect(() => {
     if (cameraActive) {
@@ -129,21 +149,121 @@ export default function RegisterStudentModal() {
     }));
   };
 
+  const buildFaceDescriptor = async (imageDataUrl) => {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+
+      image.onload = () => {
+        try {
+          const size = 32;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+
+          if (!ctx) {
+            reject(new Error("Unable to initialize descriptor canvas."));
+            return;
+          }
+
+          ctx.drawImage(image, 0, 0, size, size);
+          const pixels = ctx.getImageData(0, 0, size, size).data;
+
+          const dimension = 128;
+          const descriptor = Array.from({ length: dimension }, () => 0);
+          const counts = Array.from({ length: dimension }, () => 0);
+          const totalPixels = size * size;
+
+          for (let i = 0; i < totalPixels; i += 1) {
+            const pixelIndex = i * 4;
+            const r = pixels[pixelIndex];
+            const g = pixels[pixelIndex + 1];
+            const b = pixels[pixelIndex + 2];
+            const gray = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+            const bucket = Math.min(dimension - 1, Math.floor((i / totalPixels) * dimension));
+            descriptor[bucket] += gray;
+            counts[bucket] += 1;
+          }
+
+          for (let i = 0; i < dimension; i += 1) {
+            if (counts[i] > 0) {
+              descriptor[i] = descriptor[i] / counts[i];
+            }
+          }
+
+          const norm = Math.sqrt(descriptor.reduce((sum, value) => sum + value * value, 0));
+          const normalized = norm > 0
+            ? descriptor.map((value) => Number((value / norm).toFixed(8)))
+            : descriptor;
+
+          resolve(normalized);
+        } catch {
+          reject(new Error("Unable to compute face descriptor."));
+        }
+      };
+
+      image.onerror = () => reject(new Error("Invalid face image data."));
+      image.src = imageDataUrl;
+    });
+  };
+
+  const averageDescriptors = (descriptors) => {
+    if (!Array.isArray(descriptors) || descriptors.length === 0) {
+      return [];
+    }
+
+    const dimension = 128;
+    const sums = Array.from({ length: dimension }, () => 0);
+
+    for (const descriptor of descriptors) {
+      for (let i = 0; i < dimension; i += 1) {
+        sums[i] += descriptor[i] || 0;
+      }
+    }
+
+    const averaged = sums.map((value) => value / descriptors.length);
+    const norm = Math.sqrt(averaged.reduce((sum, value) => sum + value * value, 0));
+
+    return norm > 0
+      ? averaged.map((value) => Number((value / norm).toFixed(8)))
+      : averaged;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitError("");
+
     if (capturedFaces.length === 0) {
-      alert("Please capture at least one face image");
+      setSubmitError("Please capture at least one face image before submitting.");
       return;
     }
 
     const generatedId = `ST-${Date.now().toString().slice(-6)}`;
+    const levelMap = {
+      9: "Level 100",
+      10: "Level 200",
+      11: "Level 300",
+      12: "Level 400",
+    };
 
     try {
+      const descriptors = await Promise.all(capturedFaces.map((face) => buildFaceDescriptor(face)));
+      const faceDescriptor = averageDescriptors(descriptors);
+
       await createStudent({
         studentId: generatedId,
-        fullName: `${formData.firstName} ${formData.lastName}`.trim(),
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        dateOfBirth: formData.dateOfBirth,
         email: formData.email,
-        grade: formData.grade,
+        phone: formData.phone,
+        level: levelMap[Number(formData.grade)] || "",
+        department: formData.department.trim(),
+        guardianName: formData.guardianName.trim(),
+        guardianPhone: formData.guardianPhone,
+        guardianEmail: formData.guardianEmail,
+        faceDescriptor,
       });
 
       setSubmitted(true);
@@ -155,7 +275,7 @@ export default function RegisterStudentModal() {
           email: "",
           phone: "",
           grade: "",
-          section: "",
+          department: "",
           dateOfBirth: "",
           guardianName: "",
           guardianPhone: "",
@@ -163,10 +283,11 @@ export default function RegisterStudentModal() {
         });
         setCapturedFaces([]);
         setCameraActive(false);
+        setSubmitError("");
         router.back();
       }, 1200);
     } catch (error) {
-      alert(error.message || "Unable to register student");
+      setSubmitError(error.message || "Unable to register student");
     }
   };
 
@@ -277,26 +398,27 @@ export default function RegisterStudentModal() {
                     className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
                   >
                     <option value="">Select level</option>
-                    <option value="9">Level 9</option>
-                    <option value="10">Level 10</option>
-                    <option value="11">Level 11</option>
-                    <option value="12">Level 12</option>
+                    <option value="9">Level 100</option>
+                    <option value="10">Level 200</option>
+                    <option value="11">Level 300</option>
+                    <option value="12">Level 400</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-700">Section *</label>
+                  <label className="text-xs font-medium text-slate-700">Department *</label>
                   <select
-                    name="section"
-                    value={formData.section}
+                    name="department"
+                    value={formData.department}
                     onChange={handleChange}
                     required
                     className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
                   >
-                    <option value="">Select section</option>
-                    <option value="A">Section A</option>
-                    <option value="B">Section B</option>
-                    <option value="C">Section C</option>
-                    <option value="D">Section D</option>
+                    <option value="">{departmentsLoading ? "Loading departments..." : "Select department"}</option>
+                    {departments.map((department) => (
+                      <option key={department._id || department.name} value={department.name}>
+                        {department.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -481,6 +603,16 @@ export default function RegisterStudentModal() {
                   ✓ Student registered successfully with biometric data
                 </p>
                 <p className="mt-1 text-xs text-emerald-700">Closing dialog...</p>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {!submitted && submitError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+                <p className="flex items-center gap-2 text-sm font-semibold text-rose-800">
+                  <AlertCircle className="h-4 w-4" />
+                  {submitError}
+                </p>
               </div>
             )}
 

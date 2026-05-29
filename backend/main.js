@@ -6,6 +6,8 @@ const { connect } = require("./configs/database.config");
 const studentRoute = require("./routes/student.route");
 const attendanceRoute = require("./routes/attendance.route");
 const adminRoute = require("./routes/admin.route");
+const facultyRoute = require("./routes/faculty.route");
+const departmentRoute = require("./routes/department.route");
 
 const run = async () => {
   try {
@@ -26,6 +28,8 @@ const run = async () => {
     app.use("/student", studentRoute);
     app.use("/attendance", attendanceRoute);
     app.use("/admin", adminRoute);
+    app.use("/faculty", facultyRoute);
+    app.use("/department", departmentRoute);
 
     app.use((req, res) => {
       return res.status(404).json({

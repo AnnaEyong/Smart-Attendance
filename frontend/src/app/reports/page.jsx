@@ -13,10 +13,11 @@ import {
   Timer,
   TrendingUp,
 } from "lucide-react";
-import { fetchDailyAttendance } from "@/lib/api";
+import { fetchDailyAttendance, fetchDepartments, fetchStudents } from "@/lib/api";
 
-const summaryCards = (summary, total) => {
-  const attendanceRate = total > 0 ? ((summary.present / total) * 100).toFixed(1) : "0.0";
+const summaryCards = (summary, registeredTotal, reportTotal) => {
+  const attendanceRate = registeredTotal > 0 ? ((summary.present / registeredTotal) * 100).toFixed(1) : "0.0";
+  const absentRate = registeredTotal > 0 ? ((summary.absent / registeredTotal) * 100).toFixed(1) : "0.0";
 
   return [
     {
@@ -28,16 +29,16 @@ const summaryCards = (summary, total) => {
       Icon: TrendingUp,
     },
     {
-      label: "Late Students",
-      value: `${summary.late}`,
+      label: "Absent Students",
+      value: `${absentRate}%`,
       change: `${summary.absent} absent`,
-      note: "Late arrivals based on check-in time",
-      accent: "amber",
+      note: "Students who did not mark attendance",
+      accent: "rose",
       Icon: Timer,
     },
     {
       label: "Daily Total",
-      value: `${total}`,
+      value: `${reportTotal}`,
       change: "Live",
       note: "Students in today report",
       accent: "slate",
@@ -67,25 +68,65 @@ function initials(name) {
     .toUpperCase();
 }
 
+function toLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function ReportsPage() {
+  const [selectedDate, setSelectedDate] = useState(toLocalDateKey(new Date()));
   const [status, setStatus] = useState("All Status");
   const [level, setLevel] = useState("All Levels");
+  const [department, setDepartment] = useState("All Departments");
+  const [draftStatus, setDraftStatus] = useState("All Status");
+  const [draftLevel, setDraftLevel] = useState("All Levels");
+  const [draftDepartment, setDraftDepartment] = useState("All Departments");
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ present: 0, absent: 0, late: 0 });
+  const [registeredTotal, setRegisteredTotal] = useState(0);
+  const [allDepartments, setAllDepartments] = useState([]);
 
   useEffect(() => {
     const loadReport = async () => {
-      const dateKey = new Date().toISOString().slice(0, 10);
+      const dateKey = selectedDate;
       try {
-        const response = await fetchDailyAttendance(dateKey);
-        const backendRows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
+        const [attendanceResponse, studentsResponse, departmentsResponse] = await Promise.all([
+          fetchDailyAttendance(dateKey),
+          fetchStudents(),
+          fetchDepartments(),
+        ]);
+        const registeredStudents = Array.isArray(studentsResponse?.data) ? studentsResponse.data : [];
+        const departments = Array.isArray(departmentsResponse?.data) ? departmentsResponse.data : [];
+        setAllDepartments(departments);
+        const totalRegistered = registeredStudents.length;
+        setRegisteredTotal(totalRegistered);
+        const backendRows = Array.isArray(attendanceResponse?.data?.rows) ? attendanceResponse.data.rows : [];
+        const attendedRows = backendRows.filter((row) => Boolean(row.checkInTime));
+
+        const attendedSummary = attendedRows.reduce(
+          (acc, row) => {
+            acc.present += 1;
+
+            if (row.isLate) {
+              acc.late += 1;
+            }
+
+            return acc;
+          },
+          { present: 0, absent: 0, late: 0 },
+        );
+        attendedSummary.absent = Math.max(0, totalRegistered - attendedSummary.present);
 
         setRows(
-          backendRows.map((row) => ({
+          attendedRows.map((row) => ({
             name: row.studentName,
             routeId: row.studentId,
+            profileImage: row.profileImage || "",
             id: `#${row.studentId}`,
             level: row.level || row.grade || "N/A",
+            department: row.department || "N/A",
             checkIn: row.checkInTime || "--:--",
             checkOut: row.checkOutTime || "--:--",
             status: row.status,
@@ -98,15 +139,17 @@ export default function ReportsPage() {
                   : "from-sky-200 to-sky-400",
           }))
         );
-        setSummary(response?.data?.summary || { present: 0, absent: 0, late: 0 });
+        setSummary(attendedSummary);
       } catch {
         setRows([]);
         setSummary({ present: 0, absent: 0, late: 0 });
+        setRegisteredTotal(0);
+        setAllDepartments([]);
       }
     };
 
     loadReport();
-  }, []);
+  }, [selectedDate]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -114,16 +157,25 @@ export default function ReportsPage() {
         status === "All Status" ? true : row.status.toLowerCase() === status.toLowerCase();
       const matchesLevel =
         level === "All Levels" ? true : row.level.toLowerCase() === level.toLowerCase();
+      const matchesDepartment =
+        department === "All Departments" ? true : row.department.toLowerCase() === department.toLowerCase();
 
-      return matchesStatus && matchesLevel;
+      return matchesStatus && matchesLevel && matchesDepartment;
     });
-  }, [level, status, rows]);
+  }, [department, level, status, rows]);
 
   const levelOptions = useMemo(() => {
     return ["All Levels", ...new Set(rows.map((row) => row.level).filter(Boolean))];
   }, [rows]);
 
-  const cards = useMemo(() => summaryCards(summary, rows.length), [summary, rows.length]);
+  const departmentOptions = useMemo(() => {
+    const names = allDepartments
+      .map((department) => department?.name)
+      .filter((name) => typeof name === "string" && name.trim().length > 0);
+    return ["All Departments", ...new Set(names)];
+  }, [allDepartments]);
+
+  const cards = useMemo(() => summaryCards(summary, registeredTotal, rows.length), [summary, registeredTotal, rows.length]);
 
   return (
     <div className="min-h-full bg-slate-50 p-4 md:p-6 lg:p-8">
@@ -152,20 +204,22 @@ export default function ReportsPage() {
           <div className="grid gap-3 xl:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))_auto]">
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-slate-500">Date Range</label>
-              <button className="flex cursor-pointer h-11 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-sm text-slate-700">
-                <span className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-slate-400" />
-                  Today
-                </span>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button>
+              <div className="flex h-11 w-full items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm text-slate-700">
+                <Calendar className="h-4 w-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value || toLocalDateKey(new Date()))}
+                  className="w-full bg-transparent text-sm text-slate-700 outline-none"
+                />
+              </div>
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-slate-500">Level</label>
               <select
-                value={level}
-                onChange={(event) => setLevel(event.target.value)}
+                value={draftLevel}
+                onChange={(event) => setDraftLevel(event.target.value)}
                 className="flex h-11 w-full cursor-pointer items-center justify-between rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
               >
                 {levelOptions.map((option) => (
@@ -177,18 +231,25 @@ export default function ReportsPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">School</label>
-              <button className="flex cursor-pointer h-11 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-sm text-slate-700">
-                <span>All Students</span>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">Department</label>
+              <select
+                value={draftDepartment}
+                onChange={(event) => setDraftDepartment(event.target.value)}
+                className="flex h-11 w-full cursor-pointer items-center justify-between rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+              >
+                {departmentOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-slate-500">Status</label>
               <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
+                value={draftStatus}
+                onChange={(event) => setDraftStatus(event.target.value)}
                 className="flex h-11 w-full cursor-pointer items-center justify-between rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
               >
                 {Object.keys(statusDotStyles).length > 0 ? null : null}
@@ -196,7 +257,6 @@ export default function ReportsPage() {
                   "All Status",
                   "Present",
                   "Late",
-                  "Absent",
                 ].map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -210,8 +270,9 @@ export default function ReportsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setStatus(status);
-                  setLevel(level);
+                  setStatus(draftStatus);
+                  setLevel(draftLevel);
+                  setDepartment(draftDepartment);
                 }}
                 className="h-11 rounded-lg cursor-pointer bg-amber-600 px-5 text-sm font-semibold text-white transition hover:bg-sky-600"
               >
@@ -240,11 +301,19 @@ export default function ReportsPage() {
                   <tr key={row.id} className="border-b border-dashed border-sky-100 text-sm last:border-b-0">
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={`grid h-9 w-9 place-items-center rounded-full bg-linear-to-br text-xs font-semibold text-slate-700 ${row.avatarClass}`}
-                        >
-                          {initials(row.name)}
-                        </div>
+                        {row.profileImage ? (
+                          <img
+                            src={row.profileImage}
+                            alt={`${row.name} profile`}
+                            className="h-9 w-9 rounded-full object-cover ring-2 ring-white"
+                          />
+                        ) : (
+                          <div
+                            className={`grid h-9 w-9 place-items-center rounded-full bg-linear-to-br text-xs font-semibold text-slate-700 ${row.avatarClass}`}
+                          >
+                            {initials(row.name)}
+                          </div>
+                        )}
                         <Link href={`/students/${row.routeId}`} className="font-medium text-slate-800 transition hover:text-sky-700">
                           {row.name}
                         </Link>
@@ -309,6 +378,8 @@ export default function ReportsPage() {
                 ? "border-l-4 border-l-emerald-500"
                 : card.accent === "amber"
                   ? "border-l-4 border-l-amber-500"
+                  : card.accent === "rose"
+                    ? "border-l-4 border-l-rose-500"
                   : "border-l-4 border-l-slate-700";
 
             const changeTone =
@@ -316,6 +387,8 @@ export default function ReportsPage() {
                 ? "text-emerald-600"
                 : card.accent === "amber"
                   ? "text-rose-500"
+                  : card.accent === "rose"
+                    ? "text-rose-600"
                   : "text-emerald-600";
 
             const iconTone =
@@ -323,6 +396,8 @@ export default function ReportsPage() {
                 ? "text-emerald-600"
                 : card.accent === "amber"
                   ? "text-amber-500"
+                  : card.accent === "rose"
+                    ? "text-rose-500"
                   : "text-slate-700";
 
             return (
