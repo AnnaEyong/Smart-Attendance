@@ -10,12 +10,9 @@ import {
   ShieldCheck,
   Sparkles,
   UserCheck,
-  Users,
   LogOut,
 } from "lucide-react";
 import { checkInStudent, checkOutStudent, fetchDailyAttendance, fetchStudents } from "@/lib/api";
-
-const roster = [];
 
 function nowTime() {
   return new Date().toLocaleTimeString("en-GB", {
@@ -25,7 +22,112 @@ function nowTime() {
 }
 
 const DESCRIPTOR_SIZE = 128;
-const MATCH_DISTANCE_THRESHOLD = 0.2;
+const MATCH_DISTANCE_THRESHOLD = 0.16;
+const MATCH_GAP_THRESHOLD = 0.025;
+const MATCH_CONFIRM_WINDOW_MS = 3500;
+
+const hasLikelyFaceInFrame = (pixels, width, height) => {
+  if (!pixels || !width || !height) {
+    return false;
+  }
+
+  let sampled = 0;
+  let skinLike = 0;
+  let luminanceSum = 0;
+  let luminanceSqSum = 0;
+  const step = 4;
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4;
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+      const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+      const looksLikeSkin =
+        r > 95 &&
+        g > 40 &&
+        b > 20 &&
+        max - min > 15 &&
+        Math.abs(r - g) > 15 &&
+        r > g &&
+        r > b &&
+        cb >= 85 &&
+        cb <= 135 &&
+        cr >= 135 &&
+        cr <= 180;
+
+      if (looksLikeSkin) {
+        skinLike += 1;
+      }
+
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+      luminanceSum += luminance;
+      luminanceSqSum += luminance * luminance;
+      sampled += 1;
+    }
+  }
+
+  if (!sampled) {
+    return false;
+  }
+
+  const skinRatio = skinLike / sampled;
+  const mean = luminanceSum / sampled;
+  const variance = luminanceSqSum / sampled - mean * mean;
+
+  return skinRatio >= 0.03 && skinRatio <= 0.6 && variance >= 120;
+};
+
+const evaluateFrameQuality = (pixels, width, height) => {
+  if (!pixels || !width || !height) {
+    return { ok: false, reason: "unavailable" };
+  }
+
+  let sampled = 0;
+  let luminanceSum = 0;
+  let luminanceSqSum = 0;
+  const step = 4;
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4;
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      luminanceSum += luminance;
+      luminanceSqSum += luminance * luminance;
+      sampled += 1;
+    }
+  }
+
+  if (!sampled) {
+    return { ok: false, reason: "unavailable" };
+  }
+
+  const mean = luminanceSum / sampled;
+  const variance = luminanceSqSum / sampled - mean * mean;
+
+  if (mean < 50) {
+    return { ok: false, reason: "too-dark" };
+  }
+
+  if (mean > 205) {
+    return { ok: false, reason: "too-bright" };
+  }
+
+  if (variance < 80) {
+    return { ok: false, reason: "low-contrast" };
+  }
+
+  return { ok: true, reason: "ok" };
+};
 
 const buildFaceDescriptorFromDataUrl = async (imageDataUrl) => {
   return new Promise((resolve, reject) => {
@@ -117,11 +219,11 @@ const toSortableMinutes = (timeValue) => {
   return hours * 60 + minutes;
 };
 
-const getLatestRecognitionFromRows = (rows) => {
-  let latest = null;
+const getLatestRecognitionsFromRows = (rows, limit = 3) => {
+  const events = [];
 
   for (const row of rows) {
-    const events = [
+    const rowEvents = [
       row.checkInTime
         ? {
             id: row.studentId,
@@ -146,14 +248,12 @@ const getLatestRecognitionFromRows = (rows) => {
         : null,
     ].filter(Boolean);
 
-    for (const event of events) {
-      if (!latest || event.sortValue >= latest.sortValue) {
-        latest = event;
-      }
-    }
+    events.push(...rowEvents);
   }
 
-  return latest;
+  return events
+    .sort((a, b) => b.sortValue - a.sortValue)
+    .slice(0, limit);
 };
 
 export default function TakeAttendancePage() {
@@ -162,19 +262,20 @@ export default function TakeAttendancePage() {
   const streamRef = useRef(null);
   const scanInProgressRef = useRef(false);
   const lastMatchedStudentRef = useRef({ id: "", at: 0 });
+  const pendingMatchRef = useRef({ id: "", at: 0, distance: Number.POSITIVE_INFINITY });
 
   const [cameraActive, setCameraActive] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [attendanceMode, setAttendanceMode] = useState("check-in");
 
   const [identified, setIdentified] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const [lastScan, setLastScan] = useState(null);
-  const [liveRoster, setLiveRoster] = useState(roster);
+  const [latestRecognitions, setLatestRecognitions] = useState([]);
   const [studentsWithBiometrics, setStudentsWithBiometrics] = useState([]);
-  const [summary, setSummary] = useState({ present: 0, absent: 0, late: 0 });
+  const [summary, setSummary] = useState({ onTime: 0, absent: 0, late: 0 });
 
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -182,12 +283,6 @@ export default function TakeAttendancePage() {
     try {
       const response = await fetchStudents();
       const records = Array.isArray(response?.data) ? response.data : [];
-      const rows = records.map((student) => ({
-        id: student.studentId,
-        name: student.fullName,
-        profileImage: student.profileImage || "",
-        className: student.level || student.grade || "N/A",
-      }));
       const biometricRows = records.map((student) => ({
         id: student.studentId,
         name: student.fullName,
@@ -195,10 +290,8 @@ export default function TakeAttendancePage() {
         className: student.level || student.grade || "N/A",
         faceDescriptor: Array.isArray(student.faceDescriptor) ? student.faceDescriptor : null,
       }));
-      setLiveRoster(rows);
       setStudentsWithBiometrics(biometricRows);
     } catch {
-      setLiveRoster([]);
       setStudentsWithBiometrics([]);
     }
   };
@@ -206,32 +299,33 @@ export default function TakeAttendancePage() {
   const loadSummary = async () => {
     try {
       const response = await fetchDailyAttendance(todayKey);
-      const summaryData = response?.data?.summary || { present: 0, absent: 0, late: 0 };
+      const summaryData = response?.data?.summary || { onTime: 0, absent: 0, late: 0 };
       const rows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
-      const latestRecognition = getLatestRecognitionFromRows(rows);
+      const latestThree = getLatestRecognitionsFromRows(rows, 3);
 
       setSummary(summaryData);
-      setLastScan((current) => {
-        if (!latestRecognition) {
-          return current?.confidence ? current : null;
+      setLatestRecognitions((current) => {
+        if (!latestThree.length) {
+          return [];
         }
 
-        if (
-          current &&
-          current.id === latestRecognition.id &&
-          current.time === latestRecognition.time &&
-          current.mode === latestRecognition.mode
-        ) {
-          return {
-            ...latestRecognition,
-            confidence: current.confidence,
-          };
-        }
+        return latestThree.map((item, index) => {
+          if (index !== 0) {
+            return item;
+          }
 
-        return latestRecognition;
+          const currentFirst = current[0];
+          const isSameEvent =
+            currentFirst &&
+            currentFirst.id === item.id &&
+            currentFirst.time === item.time &&
+            currentFirst.mode === item.mode;
+
+          return isSameEvent ? { ...item, confidence: currentFirst.confidence } : item;
+        });
       });
     } catch {
-      setSummary({ present: 0, absent: 0, late: 0 });
+      setSummary({ onTime: 0, absent: 0, late: 0 });
     }
   };
 
@@ -249,6 +343,8 @@ export default function TakeAttendancePage() {
       videoRef.current.srcObject = null;
     }
     setVideoReady(false);
+    setFaceDetected(false);
+    pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
   };
 
   const startCamera = async () => {
@@ -355,9 +451,37 @@ export default function TakeAttendancePage() {
 
     const canvas = canvasRef.current;
     const context = canvas.getContext("2d");
+    if (!context) {
+      return;
+    }
+
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     context.drawImage(videoRef.current, 0, 0);
+
+    const framePixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const frameQuality = evaluateFrameQuality(framePixels, canvas.width, canvas.height);
+    if (!frameQuality.ok) {
+      setFaceDetected(false);
+
+      if (frameQuality.reason === "too-dark") {
+        setCameraError("Lighting is too low. Please move to a brighter area.");
+      } else if (frameQuality.reason === "too-bright") {
+        setCameraError("Lighting is too bright. Reduce glare or backlight.");
+      } else if (frameQuality.reason === "low-contrast") {
+        setCameraError("Image contrast is low. Adjust camera angle or lighting.");
+      }
+
+      return;
+    }
+
+    const foundFace = hasLikelyFaceInFrame(framePixels, canvas.width, canvas.height);
+    setFaceDetected(foundFace);
+
+    if (!foundFace) {
+      setCameraError("");
+      return;
+    }
 
     const imageData = canvas.toDataURL("image/jpeg");
 
@@ -379,20 +503,53 @@ export default function TakeAttendancePage() {
       const capturedDescriptor = await buildFaceDescriptorFromDataUrl(imageData);
 
       let bestMatch = null;
+      let secondBestDistance = Number.POSITIVE_INFINITY;
       for (const candidate of candidates) {
         const distance = euclideanDistance(capturedDescriptor, candidate.faceDescriptor);
         if (!bestMatch || distance < bestMatch.distance) {
+          if (bestMatch) {
+            secondBestDistance = bestMatch.distance;
+          }
           bestMatch = {
             student: candidate,
             distance,
           };
+        } else if (distance < secondBestDistance) {
+          secondBestDistance = distance;
         }
       }
 
       if (!bestMatch || bestMatch.distance > MATCH_DISTANCE_THRESHOLD) {
         setCameraError("Face not recognized. Please align the face and try again.");
+        pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
         return;
       }
+
+      if (secondBestDistance - bestMatch.distance < MATCH_GAP_THRESHOLD) {
+        setCameraError("Face match is ambiguous. Please look straight at the camera and try again.");
+        pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
+        return;
+      }
+
+      const matchedStudentName = bestMatch.student.name;
+
+      const pendingNow = Date.now();
+      const pendingMatch = pendingMatchRef.current;
+      const isPendingSameStudent =
+        pendingMatch.id === bestMatch.student.id &&
+        pendingNow - pendingMatch.at <= MATCH_CONFIRM_WINDOW_MS;
+
+      if (!isPendingSameStudent) {
+        pendingMatchRef.current = {
+          id: bestMatch.student.id,
+          at: pendingNow,
+          distance: bestMatch.distance,
+        };
+        setCameraError(`Face detected for ${matchedStudentName}. Hold still to verify...`);
+        return;
+      }
+
+      pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
 
       const matchedNow = Date.now();
       if (lastMatchedStudentRef.current.id === bestMatch.student.id && matchedNow - lastMatchedStudentRef.current.at < 8000) {
@@ -400,7 +557,20 @@ export default function TakeAttendancePage() {
       }
 
       const action = attendanceMode === "check-out" ? checkOutStudent : checkInStudent;
-      const response = await action({ studentId: bestMatch.student.id });
+      let response;
+
+      try {
+        response = await action({ studentId: bestMatch.student.id });
+      } catch (requestError) {
+        const message = String(requestError?.message || "");
+        if (attendanceMode === "check-in" && /already checked in/i.test(message)) {
+          setCameraError(`${matchedStudentName} already checked in.`);
+          return;
+        }
+
+        throw requestError;
+      }
+
       const recognitionTime = attendanceMode === "check-out"
         ? response?.data?.checkOutTime || nowTime()
         : response?.data?.checkInTime || nowTime();
@@ -410,12 +580,23 @@ export default function TakeAttendancePage() {
         at: matchedNow,
       };
 
-      setLastScan({
-        ...bestMatch.student,
-        confidence: confidenceFromDistance(bestMatch.distance),
-        time: recognitionTime,
-        mode: attendanceMode,
+      setLatestRecognitions((current) => {
+        const latestEvent = {
+          ...bestMatch.student,
+          confidence: confidenceFromDistance(bestMatch.distance),
+          time: recognitionTime,
+          mode: attendanceMode,
+          sortValue: toSortableMinutes(recognitionTime),
+        };
+
+        const rest = current.filter(
+          (item) =>
+            !(item.id === latestEvent.id && item.time === latestEvent.time && item.mode === latestEvent.mode),
+        );
+
+        return [latestEvent, ...rest].slice(0, 3);
       });
+      setCameraError("");
       await loadSummary();
     } catch (error) {
       setCameraError(error.message || "Unable to save attendance");
@@ -437,8 +618,8 @@ export default function TakeAttendancePage() {
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs">
-              <p className="text-xs text-slate-500">Checked In</p>
-              <p className="mt-1 text-lg font-semibold text-emerald-700">{summary.present}</p>
+              <p className="text-xs text-slate-500">On-time</p>
+              <p className="mt-1 text-lg font-semibold text-emerald-700">{summary.onTime || 0}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs">
               <p className="text-xs text-slate-500">Absent</p>
@@ -527,8 +708,8 @@ export default function TakeAttendancePage() {
 
                     <div className="absolute inset-0 z-20 flex items-center justify-center">
                       <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-wide text-white shadow-lg backdrop-blur-sm">
-                        <span className={`h-2 w-2 rounded-full ${videoReady ? "animate-pulse bg-emerald-300" : "bg-slate-400"}`} />
-                        {videoReady ? "AUTO SCANNING" : "WAITING FOR CAMERA"}
+                        <span className={`h-2 w-2 rounded-full ${videoReady ? (faceDetected ? "animate-pulse bg-emerald-300" : "bg-amber-300") : "bg-slate-400"}`} />
+                        {videoReady ? (faceDetected ? "FACE DETECTED - SCANNING" : "WAITING FOR FACE") : "WAITING FOR CAMERA"}
                       </div>
                     </div>
 
@@ -606,80 +787,25 @@ export default function TakeAttendancePage() {
                 <ScanFace className="h-4 w-4 text-sky-600" />
               </div>
 
-              {lastScan ? (
-                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="flex items-center gap-3">
-                    {lastScan.profileImage ? (
-                      <img
-                        src={lastScan.profileImage}
-                        alt={`${lastScan.name} profile`}
-                        className="h-12 w-12 rounded-full object-cover ring-2 ring-white"
-                      />
-                    ) : (
-                      <div className="grid h-12 w-12 place-items-center rounded-full bg-linear-to-br from-emerald-200 to-emerald-400 text-sm font-semibold text-emerald-900">
-                        {lastScan.name
-                          .split(" ")
-                          .map((part) => part[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-900">
-                        <Link href={`/students/${lastScan.id}`} className="transition hover:text-sky-700">
-                          {lastScan.name}
-                        </Link>
-                      </p>
-                      <p className="mt-1 text-xs text-emerald-700">{lastScan.id} • {lastScan.className}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
-                    <span className="font-semibold text-sky-700 uppercase">{lastScan.mode === "check-out" ? "Check-Out" : "Check-In"}</span>
-                    <span className="font-semibold text-emerald-700">
-                      {lastScan.confidence ? `Confidence ${lastScan.confidence}` : "Attendance recorded"}
-                    </span>
-                    <span>{lastScan.time}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">
-                  No recognition yet. Capture attendance to register a scan.
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-slate-800">Session Queue</h2>
-                  <p className="text-xs text-slate-400">Students expected for school check-in</p>
-                </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">
-                  <Users className="h-3.5 w-3.5" />
-                  {liveRoster.length}
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                {liveRoster.map((student) => {
-                  const matched = lastScan?.id === student.id;
-                  return (
-                    <div
-                      key={student.id}
-                      className={`rounded-xl border px-3 py-2 ${matched ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
+              {latestRecognitions.length ? (
+                <div className="mt-4 space-y-3">
+                  {latestRecognitions.map((scan, index) => {
+                    const highlightTone = index === 0;
+                    return (
+                      <div
+                        key={`${scan.id}-${scan.mode}-${scan.time}`}
+                        className={`rounded-xl border p-4 ${highlightTone ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                      >
                         <div className="flex items-center gap-3">
-                          {student.profileImage ? (
+                          {scan.profileImage ? (
                             <img
-                              src={student.profileImage}
-                              alt={`${student.name} profile`}
-                              className="h-10 w-10 rounded-full object-cover ring-2 ring-white"
+                              src={scan.profileImage}
+                              alt={`${scan.name} profile`}
+                              className="h-12 w-12 rounded-full object-cover ring-2 ring-white"
                             />
                           ) : (
-                            <div className="grid h-10 w-10 place-items-center rounded-full bg-linear-to-br from-slate-200 to-slate-400 text-xs font-semibold text-slate-700">
-                              {student.name
+                            <div className={`grid h-12 w-12 place-items-center rounded-full text-sm font-semibold ${highlightTone ? "bg-linear-to-br from-emerald-200 to-emerald-400 text-emerald-900" : "bg-linear-to-br from-slate-200 to-slate-400 text-slate-700"}`}>
+                              {scan.name
                                 .split(" ")
                                 .map((part) => part[0])
                                 .join("")
@@ -688,24 +814,30 @@ export default function TakeAttendancePage() {
                             </div>
                           )}
                           <div>
-                            <p className="text-sm font-medium text-slate-800">
-                              <Link href={`/students/${student.id}`} className="transition hover:text-sky-700">
-                                {student.name}
+                            <p className={`text-sm font-semibold ${highlightTone ? "text-emerald-900" : "text-slate-800"}`}>
+                              <Link href={`/students/${scan.id}`} className="transition hover:text-sky-700">
+                                {scan.name}
                               </Link>
                             </p>
-                            <p className="text-xs text-slate-500">{student.id} • {student.className}</p>
+                            <p className={`mt-1 text-xs ${highlightTone ? "text-emerald-700" : "text-slate-500"}`}>{scan.id} • {scan.className}</p>
                           </div>
                         </div>
-                        {matched ? (
-                          <span className="text-xs font-semibold text-emerald-700">Checked</span>
-                        ) : (
-                          <span className="text-xs text-slate-400">Pending</span>
-                        )}
+                        <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                          <span className="font-semibold text-sky-700 uppercase">{scan.mode === "check-out" ? "Check-Out" : "Check-In"}</span>
+                          <span className={`font-semibold ${highlightTone ? "text-emerald-700" : "text-slate-600"}`}>
+                            {scan.confidence ? `Confidence ${scan.confidence}` : "Attendance recorded"}
+                          </span>
+                          <span>{scan.time}</span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">
+                  No recognition yet. Capture attendance to register a scan.
+                </div>
+              )}
             </section>
           </div>
         </div>

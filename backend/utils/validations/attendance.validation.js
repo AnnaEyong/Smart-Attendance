@@ -16,6 +16,11 @@ const dailyQuerySchema = z.object({
   date: z.string().optional(),
 });
 
+const monthlyQuerySchema = z.object({
+  studentId: z.string().min(1),
+  month: z.string().optional(),
+});
+
 const attendanceCheckInValidation = (req, res, next) => {
   const result = Validation(checkInSchema, req.body);
   if (!result.isValid) {
@@ -43,8 +48,18 @@ const attendanceDailyQueryValidation = (req, res, next) => {
   next();
 };
 
+const attendanceMonthlyQueryValidation = (req, res, next) => {
+  const result = Validation(monthlyQuerySchema, req.query);
+  if (!result.isValid) {
+    return res.status(400).json(result.error);
+  }
+
+  next();
+};
+
 module.exports = {
   attendanceCheckInValidation,
   attendanceCheckOutValidation,
   attendanceDailyQueryValidation,
+  attendanceMonthlyQueryValidation,
 };

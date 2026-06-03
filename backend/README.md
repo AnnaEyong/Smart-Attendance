@@ -12,8 +12,8 @@ Simple, beginner-friendly Express backend for school attendance.
 
 - Attendance is school-level only (not class attendance).
 - Student is **Absent** if no check-in exists for the day.
-- Student is **Late** if check-in time is after the late cutoff (`08:00` by default).
-- Student is **Present** if checked in on time.
+- Student is **Late** if check-in time is after the late cutoff (`13:00` by default).
+- Student is **On-time** if checked in on time.
 
 ## Data Behavior
 
@@ -89,7 +89,7 @@ Check-in body:
 {
   "studentId": "ST-2041",
   "timestamp": "2026-05-25T07:55:00",
-  "lateCutoff": "08:00"
+  "lateCutoff": "13:00"
 }
 ```
 

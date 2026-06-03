@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ScanFace,
   Eye,
@@ -29,6 +29,7 @@ import { loginAdmin, setAdminToken } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -47,7 +48,8 @@ export default function LoginPage() {
       const response = await loginAdmin({ email, password });
       setAdminToken(response?.data?.token || "");
       toast.success(response?.message || "Login successful");
-      router.push("/dashboard");
+      const nextPath = searchParams.get("next");
+      router.push(nextPath || "/dashboard");
     } catch (error) {
       toast.error(error.message || "Login failed");
     } finally {

@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   BadgeCheck,
   CalendarDays,
   ChevronLeft,
+  ChevronRight,
   Download,
   Pencil,
   Mail,
@@ -15,24 +16,30 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { fetchDailyAttendance, fetchStudentById, updateStudent } from "@/lib/api";
+import {
+  fetchDailyAttendance,
+  fetchStudentById,
+  fetchStudentMonthlyAttendance,
+  updateStudent,
+} from "@/lib/api";
+import StudentDetailSkeleton from "@/components/StudentDetailSkeleton";
 
 const dayStyles = {
-  present: "bg-emerald-100 text-emerald-900",
+  "on-time": "bg-emerald-100 text-emerald-900",
   absent: "bg-rose-100 text-rose-900",
   late: "bg-amber-100 text-amber-900",
   neutral: "bg-slate-100 text-slate-400",
 };
 
 const statusTextStyles = {
-  present: "text-emerald-600",
+  "on-time": "text-emerald-600",
   absent: "text-rose-600",
   late: "text-amber-600",
   neutral: "text-slate-600",
 };
 
 const statusBadgeStyles = {
-  present: "bg-emerald-100 text-emerald-700",
+  "on-time": "bg-emerald-100 text-emerald-700",
   absent: "bg-rose-100 text-rose-700",
   late: "bg-amber-100 text-amber-700",
   neutral: "bg-slate-100 text-slate-700",
@@ -45,37 +52,26 @@ function toLocalDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function buildMonthMap(monthRows, daysInMonth, today) {
+function buildMonthMap(monthRowsByDate, selectedMonthDate, todayDateKey) {
+  const year = selectedMonthDate.getFullYear();
+  const monthIndex = selectedMonthDate.getMonth();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
   const map = {};
 
   for (let day = 1; day <= daysInMonth; day += 1) {
-    if (day > today) {
+    const dayDateKey = toLocalDateKey(new Date(year, monthIndex, day));
+
+    if (dayDateKey > todayDateKey) {
       map[day] = "neutral";
       continue;
     }
 
-    const row = monthRows[day];
-    map[day] = (row?.status || "Absent").toLowerCase();
+    const row = monthRowsByDate[dayDateKey];
+    // Keep each day pinned to its date key from the API.
+    map[day] = row?.status ? String(row.status).toLowerCase() : "neutral";
   }
 
   return map;
-}
-
-function buildMonthDateKeys(baseDate = new Date()) {
-  const year = baseDate.getFullYear();
-  const monthIndex = baseDate.getMonth();
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-
-  return Array.from({ length: daysInMonth }, (_, index) => {
-    const day = index + 1;
-    const date = new Date(year, monthIndex, day);
-    const dateKey = toLocalDateKey(date);
-
-    return {
-      day,
-      dateKey,
-    };
-  });
 }
 
 function initials(name) {
@@ -97,6 +93,14 @@ export default function StudentDetailPage() {
   const [student, setStudent] = useState(null);
   const [todayRow, setTodayRow] = useState(null);
   const [monthRows, setMonthRows] = useState({});
+  const [selectedDateKey, setSelectedDateKey] = useState(() => toLocalDateKey(new Date()));
+  const [selectedMonthDate, setSelectedMonthDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [monthError, setMonthError] = useState("");
+  const monthRequestRef = useRef(0);
+  const monthCacheRef = useRef({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -153,6 +157,56 @@ export default function StudentDetailPage() {
     });
   };
 
+  const loadMonthSnapshot = async (monthDate, targetStudentId = studentId) => {
+    if (!targetStudentId) {
+      return;
+    }
+
+    const requestId = monthRequestRef.current + 1;
+    monthRequestRef.current = requestId;
+
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+    const cacheKey = `${targetStudentId}:${monthKey}`;
+    const cachedRows = monthCacheRef.current[cacheKey];
+
+    if (cachedRows) {
+      setMonthRows(cachedRows);
+    }
+
+    setMonthError("");
+
+    try {
+      const monthlyResponse = await fetchStudentMonthlyAttendance(targetStudentId, monthKey);
+      const monthlyRows = Array.isArray(monthlyResponse?.data?.rows) ? monthlyResponse.data.rows : [];
+
+      const nextMonthRows = monthlyRows.reduce((acc, row) => {
+        const key = String(row?.date || "").trim();
+        if (!key) {
+          return acc;
+        }
+
+        acc[key] = row;
+        return acc;
+      }, {});
+
+      if (requestId !== monthRequestRef.current) {
+        return;
+      }
+
+      monthCacheRef.current[cacheKey] = nextMonthRows;
+      setMonthRows(nextMonthRows);
+    } catch (snapshotError) {
+      if (requestId !== monthRequestRef.current) {
+        return;
+      }
+
+      if (!cachedRows) {
+        setMonthRows({});
+      }
+      setMonthError(snapshotError.message || "Unable to load monthly attendance snapshot.");
+    }
+  };
+
   const loadStudentDetail = async () => {
     if (!studentId) {
       return;
@@ -163,28 +217,17 @@ export default function StudentDetailPage() {
 
     try {
       const dateKey = toLocalDateKey(new Date());
-      const monthDates = buildMonthDateKeys(new Date());
-      const [studentResponse, dailyResponse, ...monthlyResponses] = await Promise.all([
+      const [studentResponse, dailyResponse] = await Promise.all([
         fetchStudentById(studentId),
         fetchDailyAttendance(dateKey),
-        ...monthDates.map(({ dateKey: monthlyDateKey }) => fetchDailyAttendance(monthlyDateKey)),
       ]);
 
       const loadedStudent = studentResponse?.data || null;
       const rows = Array.isArray(dailyResponse?.data?.rows) ? dailyResponse.data.rows : [];
       const row = rows.find((item) => item.studentId === studentId) || null;
-      const nextMonthRows = monthDates.reduce((acc, { day }, index) => {
-        const response = monthlyResponses[index];
-        const dailyRows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
-        const matchedRow = dailyRows.find((item) => item.studentId === studentId) || null;
-
-        acc[day] = matchedRow;
-        return acc;
-      }, {});
 
       setStudent(loadedStudent);
       setTodayRow(row);
-      setMonthRows(nextMonthRows);
 
       const fullName = loadedStudent?.fullName || "";
       const [splitFirst = "", ...rest] = fullName.split(" ");
@@ -211,6 +254,31 @@ export default function StudentDetailPage() {
   useEffect(() => {
     loadStudentDetail();
   }, [studentId]);
+
+  useEffect(() => {
+    if (!studentId) {
+      return;
+    }
+
+    loadMonthSnapshot(selectedMonthDate, studentId);
+  }, [selectedMonthDate, studentId]);
+
+  useEffect(() => {
+    const todayDateKey = toLocalDateKey(new Date());
+    const currentMonthPrefix = todayDateKey.slice(0, 7);
+    const monthPrefix = `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+    if (monthPrefix === currentMonthPrefix) {
+      if (selectedDateKey !== todayDateKey) {
+        setSelectedDateKey(todayDateKey);
+      }
+      return;
+    }
+
+    if (!String(selectedDateKey || "").startsWith(`${monthPrefix}-`)) {
+      setSelectedDateKey("");
+    }
+  }, [selectedMonthDate, selectedDateKey]);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -291,25 +359,52 @@ export default function StudentDetailPage() {
   };
 
   const attendanceMap = useMemo(() => {
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    return buildMonthMap(monthRows, daysInMonth, now.getDate());
-  }, [monthRows]);
+    return buildMonthMap(monthRows, selectedMonthDate, toLocalDateKey(new Date()));
+  }, [monthRows, selectedMonthDate]);
 
   const monthDays = useMemo(() => {
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysInMonth = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, index) => index + 1);
-  }, []);
+  }, [selectedMonthDate]);
+
+  const firstDayOffset = useMemo(
+    () => new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth(), 1).getDay(),
+    [selectedMonthDate]
+  );
+
+  const monthLabel = useMemo(
+    () => selectedMonthDate.toLocaleString("en-GB", { month: "long", year: "numeric" }),
+    [selectedMonthDate]
+  );
+
+  const canGoToNextMonth = useMemo(() => {
+    const now = new Date();
+    const currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    return selectedMonthDate < currentMonthDate;
+  }, [selectedMonthDate]);
+
+  const handlePreviousMonth = () => {
+    setSelectedMonthDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    if (!canGoToNextMonth) {
+      return;
+    }
+
+    setSelectedMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+  };
+
+  const selectedRow = monthRows[selectedDateKey] || null;
+  const selectedStatusLabel = !selectedDateKey
+    ? "Select date"
+    : selectedRow?.status || (selectedDateKey > toLocalDateKey(new Date()) ? "Upcoming" : "No record");
+  const normalizedSelectedStatus = selectedRow?.status
+    ? String(selectedRow.status).toLowerCase()
+    : "neutral";
 
   if (loading) {
-    return (
-      <div className="min-h-full bg-slate-50 p-4 md:p-6 lg:p-8">
-        <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-xs">
-          Loading student details...
-        </div>
-      </div>
-    );
+    return <StudentDetailSkeleton />;
   }
 
   if (error || !student) {
@@ -581,8 +676,31 @@ export default function StudentDetailPage() {
                   <CalendarDays className="h-4 w-4 text-sky-700" />
                   Monthly Attendance Snapshot
                 </div>
-                <span className="text-sm font-semibold text-slate-700">{new Date().toLocaleString("en-GB", { month: "long", year: "numeric" })}</span>
+                <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  <button
+                    onClick={handlePreviousMonth}
+                    className="grid h-7 w-7 place-items-center rounded-md text-slate-600 transition hover:bg-white hover:text-slate-800"
+                    aria-label="View previous month"
+                    type="button"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-36 px-2 text-center text-sm font-semibold text-slate-700">{monthLabel}</span>
+                  <button
+                    onClick={handleNextMonth}
+                    disabled={!canGoToNextMonth}
+                    className="grid h-7 w-7 place-items-center rounded-md text-slate-600 transition hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-300"
+                    aria-label="View next month"
+                    type="button"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
+
+              {monthError ? (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{monthError}</div>
+              ) : null}
 
               <div className="mt-6 grid grid-cols-7 gap-2 text-center text-sm font-semibold text-slate-500">
                 {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((day) => (
@@ -591,19 +709,29 @@ export default function StudentDetailPage() {
               </div>
 
               <div className="mt-3 grid grid-cols-7 gap-2">
+                {Array.from({ length: firstDayOffset }, (_, index) => (
+                  <div key={`offset-${index}`} className="h-13 rounded-xl border border-transparent bg-transparent" aria-hidden="true" />
+                ))}
                 {monthDays.map((day) => {
+                  const dayDateKey = `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                   const statusKey = attendanceMap[day] || "neutral";
                   const tone = dayStyles[statusKey] || dayStyles.neutral;
+                  const isSelected = selectedDateKey === dayDateKey;
                   return (
-                    <div key={day} className={`flex h-13 flex-col items-center justify-center rounded-xl border border-transparent text-sm font-medium ${tone}`}>
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setSelectedDateKey(dayDateKey)}
+                      className={`flex h-13 flex-col items-center justify-center rounded-xl border text-sm font-medium transition outline-none focus-visible:outline-none ${tone} ${isSelected ? "border-sky-300 ring-2 ring-sky-100" : "border-transparent"}`}
+                    >
                       <span>{day}</span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
 
               <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-slate-600">
-                <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Present</span>
+                <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />On-time</span>
                 <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />Late</span>
                 <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Absent</span>
               </div>
@@ -615,22 +743,32 @@ export default function StudentDetailPage() {
                   <ShieldCheck className="h-4 w-4 text-sky-700" />
                   Attendance Record Status
                 </div>
-                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusBadgeStyles[normalizedStatus] || statusBadgeStyles.neutral}`}>{status}</span>
+                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusBadgeStyles[normalizedSelectedStatus] || statusBadgeStyles.neutral}`}>{selectedStatusLabel}</span>
               </div>
 
-              <div className="mt-2 grid gap-4 rounded-2xl bg-slate-50 p-4 md:grid-cols-[100px_minmax(0,1fr)_180px]">
-                <div className="grid h-24 w-full place-items-center rounded-xl bg-linear-to-br from-slate-700 via-sky-900 to-slate-950 text-lg font-semibold text-white">
-                  {avatar}
+              <div className="mt-2 grid gap-4 rounded-full bg-slate-50 p-4 md:grid-cols-[100px_minmax(0,1fr)_180px]">
+                <div className="grid h-24 w-full rounded-full place-items-center bg-linear-to-br from-slate-700 via-sky-900 to-slate-950 text-lg font-semibold text-white">
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt={`${fullName} profile`}
+                      className="h-full w-full rounded-full object-cover  shadow-sm"
+                    />
+                  ) : (
+                    <div className="grid place-items-center rounded-full bg-transparent text-2xl font-semibold text-white shadow-sm">
+                      {avatar}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div>
-                    <p className="text-sm text-slate-500">Today Check-in</p>
-                    <p className="font-semibold text-slate-900">{todayRow?.checkInTime || "--:--"}</p>
+                    <p className="text-sm text-slate-500">Check-in</p>
+                    <p className="font-semibold text-slate-900">{selectedRow?.checkInTime || "--:--"}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-slate-500">Today Check-out</p>
-                    <p className="font-semibold text-slate-900">{todayRow?.checkOutTime || "--:--"}</p>
+                    <p className="text-sm text-slate-500">Check-out</p>
+                    <p className="font-semibold text-slate-900">{selectedRow?.checkOutTime || "--:--"}</p>
                   </div>
                   <div>
                     <p className="text-sm text-slate-500">Student ID</p>
@@ -638,7 +776,7 @@ export default function StudentDetailPage() {
                   </div>
                   <div>
                     <p className="text-sm text-slate-500">Record Date</p>
-                    <p className="font-semibold text-slate-900">{todayRow?.date || toLocalDateKey(new Date())}</p>
+                    <p className="font-semibold text-slate-900">{selectedDateKey || "--"}</p>
                   </div>
                 </div>
 

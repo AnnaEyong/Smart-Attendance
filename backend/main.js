@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 
 const { connect } = require("./configs/database.config");
+const Attendance = require("./src/models/Attendance");
 const studentRoute = require("./routes/student.route");
 const attendanceRoute = require("./routes/attendance.route");
 const adminRoute = require("./routes/admin.route");
@@ -15,6 +16,16 @@ const run = async () => {
     const app = express();
 
     await connect();
+
+    // One-time compatibility migration for legacy status values.
+    const migrationResult = await Attendance.updateMany(
+      { status: "Present" },
+      { $set: { status: "On-time" } }
+    );
+
+    if (migrationResult.modifiedCount > 0) {
+      console.log(`Migrated ${migrationResult.modifiedCount} attendance records to On-time status.`);
+    }
 
     app.use(cors());
     app.use(express.json());

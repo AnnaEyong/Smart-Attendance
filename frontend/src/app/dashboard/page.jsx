@@ -17,7 +17,7 @@ function todayLabel() {
 export default function DashboardPage() {
   const [students, setStudents] = useState([]);
   const [report, setReport] = useState({
-    summary: { present: 0, absent: 0, late: 0 },
+    summary: { onTime: 0, absent: 0, late: 0 },
     rows: [],
   });
   const [error, setError] = useState("");
@@ -35,7 +35,7 @@ export default function DashboardPage() {
         setStudents(Array.isArray(studentsResponse?.data) ? studentsResponse.data : []);
         setReport(
           reportResponse?.data || {
-            summary: { present: 0, absent: 0, late: 0 },
+            summary: { onTime: 0, absent: 0, late: 0 },
             rows: [],
           }
         );
@@ -48,11 +48,11 @@ export default function DashboardPage() {
   }, []);
 
   const totalStudents = students.length;
-  const present = report.summary?.present || 0;
+  const onTime = report.summary?.onTime || 0;
   const absent = report.summary?.absent || 0;
   const late = report.summary?.late || 0;
 
-  const presentRate = totalStudents > 0 ? Math.round((present / totalStudents) * 100) : 0;
+  const onTimeRate = totalStudents > 0 ? Math.round((onTime / totalStudents) * 100) : 0;
   const absentRate = totalStudents > 0 ? Math.round((absent / totalStudents) * 100) : 0;
   const lateRate = totalStudents > 0 ? Math.round((late / totalStudents) * 100) : 0;
 
@@ -69,13 +69,13 @@ export default function DashboardPage() {
       borderColor: "border-slate-200",
     },
     {
-      label: "Present Today",
-      value: String(present),
-      sub: `${presentRate}% attendance rate`,
+      label: "On-time Today",
+      value: String(onTime),
+      sub: `${onTimeRate}% attendance rate`,
       icon: TrendingUp,
       accent: "text-emerald-700",
       iconBg: "bg-emerald-50",
-      pct: presentRate,
+      pct: onTimeRate,
       barColor: "bg-emerald-500",
       borderColor: "border-emerald-200",
     },
@@ -115,7 +115,7 @@ export default function DashboardPage() {
   }, [report.rows]);
 
   const statusStyles = {
-    present: "text-emerald-700 bg-emerald-50",
+    "on-time": "text-emerald-700 bg-emerald-50",
     late: "text-amber-700 bg-amber-50",
     absent: "text-red-600 bg-red-50",
   };
@@ -175,7 +175,7 @@ export default function DashboardPage() {
 
           <div className="mt-5 space-y-4">
             {[
-              { label: "Present", value: present, color: "bg-emerald-500" },
+              { label: "On-time", value: onTime, color: "bg-emerald-500" },
               { label: "Late", value: late, color: "bg-amber-400" },
               { label: "Absent", value: absent, color: "bg-rose-500" },
             ].map((item) => {
@@ -214,12 +214,12 @@ export default function DashboardPage() {
 
           <div className="mt-4 space-y-3">
             {[
-              { title: "Checked in", value: present, tone: "text-emerald-700" },
+              { title: "On-time", value: onTime, tone: "text-emerald-700" },
               { title: "Marked late", value: late, tone: "text-amber-700" },
               { title: "Marked absent", value: absent, tone: "text-rose-700" },
-              { title: "Total students", value: totalStudents, tone: "text-slate-700" },
+              // { title: "Total students", value: totalStudents, tone: "text-slate-700" },
             ].map((item) => (
-              <div key={item.title} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <div key={item.title} className="rounded-xl flex justify-between border border-slate-100 bg-slate-50 p-3">
                 <p className="text-xs text-slate-500">{item.title}</p>
                 <p className={`mt-1 text-lg font-semibold ${item.tone}`}>{item.value}</p>
               </div>
@@ -302,9 +302,9 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-xs text-emerald-700">
+      {/* <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-xs text-emerald-700">
         School-level attendance logic is active: no class-wise attendance is used in this dashboard.
-      </div>
+      </div> */}
     </div>
   );
 }

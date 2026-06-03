@@ -16,14 +16,15 @@ import {
 import { fetchDailyAttendance, fetchDepartments, fetchStudents } from "@/lib/api";
 
 const summaryCards = (summary, registeredTotal, reportTotal) => {
-  const attendanceRate = registeredTotal > 0 ? ((summary.present / registeredTotal) * 100).toFixed(1) : "0.0";
+  const onTimeCount = summary.onTime || 0;
+  const attendanceRate = registeredTotal > 0 ? ((onTimeCount / registeredTotal) * 100).toFixed(1) : "0.0";
   const absentRate = registeredTotal > 0 ? ((summary.absent / registeredTotal) * 100).toFixed(1) : "0.0";
 
   return [
     {
       label: "Overall Attendance",
       value: `${attendanceRate}%`,
-      change: `${summary.present} present`,
+      change: `${onTimeCount} on-time`,
       note: "Students who checked in today",
       accent: "emerald",
       Icon: TrendingUp,
@@ -48,13 +49,13 @@ const summaryCards = (summary, registeredTotal, reportTotal) => {
 };
 
 const toneStyles = {
-  present: "bg-emerald-100 text-emerald-700",
+  "on-time": "bg-emerald-100 text-emerald-700",
   late: "bg-amber-100 text-amber-700",
   absent: "bg-rose-100 text-rose-700",
 };
 
 const statusDotStyles = {
-  Present: "bg-emerald-500",
+  "On-time": "bg-emerald-500",
   Late: "bg-amber-500",
   Absent: "bg-rose-500",
 };
@@ -84,7 +85,7 @@ export default function ReportsPage() {
   const [draftLevel, setDraftLevel] = useState("All Levels");
   const [draftDepartment, setDraftDepartment] = useState("All Departments");
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState({ present: 0, absent: 0, late: 0 });
+  const [summary, setSummary] = useState({ onTime: 0, absent: 0, late: 0 });
   const [registeredTotal, setRegisteredTotal] = useState(0);
   const [allDepartments, setAllDepartments] = useState([]);
 
@@ -107,7 +108,7 @@ export default function ReportsPage() {
 
         const attendedSummary = attendedRows.reduce(
           (acc, row) => {
-            acc.present += 1;
+            acc.onTime += 1;
 
             if (row.isLate) {
               acc.late += 1;
@@ -115,9 +116,9 @@ export default function ReportsPage() {
 
             return acc;
           },
-          { present: 0, absent: 0, late: 0 },
+          { onTime: 0, absent: 0, late: 0 },
         );
-        attendedSummary.absent = Math.max(0, totalRegistered - attendedSummary.present);
+        attendedSummary.absent = Math.max(0, totalRegistered - attendedSummary.onTime);
 
         setRows(
           attendedRows.map((row) => ({
@@ -132,7 +133,7 @@ export default function ReportsPage() {
             status: row.status,
             tone: row.status.toLowerCase(),
             avatarClass:
-              row.status === "Present"
+              row.status === "On-time"
                 ? "from-emerald-200 to-emerald-400"
                 : row.status === "Late"
                   ? "from-amber-200 to-amber-400"
@@ -142,7 +143,7 @@ export default function ReportsPage() {
         setSummary(attendedSummary);
       } catch {
         setRows([]);
-        setSummary({ present: 0, absent: 0, late: 0 });
+        setSummary({ onTime: 0, absent: 0, late: 0 });
         setRegisteredTotal(0);
         setAllDepartments([]);
       }
@@ -255,7 +256,7 @@ export default function ReportsPage() {
                 {Object.keys(statusDotStyles).length > 0 ? null : null}
                 {[
                   "All Status",
-                  "Present",
+                  "On-time",
                   "Late",
                 ].map((option) => (
                   <option key={option} value={option}>
@@ -329,7 +330,7 @@ export default function ReportsPage() {
                       >
                         <span
                           className={`h-1.5 w-1.5 rounded-full ${
-                            row.tone === "present"
+                            row.tone === "on-time"
                               ? "bg-emerald-500"
                               : row.tone === "late"
                                 ? "bg-amber-500"

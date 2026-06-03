@@ -1,6 +1,7 @@
 const attendanceService = require("../services/attendance.service");
 const Attendance = require("../models/Attendance");
 const Student = require("../models/Student");
+const DEFAULT_LATE_CUTOFF = "13:00";
 
 const toDateKey = (dateInput) => {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -27,12 +28,32 @@ const toTimeString = (dateInput) => {
   });
 };
 
-const isLateTime = (time24, lateCutoff = "08:00") => {
+const isLateTime = (time24, lateCutoff = DEFAULT_LATE_CUTOFF) => {
   if (!time24) {
     return false;
   }
 
   return time24 > lateCutoff;
+};
+
+const toMonthKey = (monthInput) => {
+  if (!monthInput) {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  const monthKey = String(monthInput).trim();
+  const match = monthKey.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const monthNumber = Number(match[2]);
+  if (monthNumber < 1 || monthNumber > 12) {
+    return null;
+  }
+
+  return monthKey;
 };
 
 const toPublicAttendance = (record, studentId) => {
@@ -69,14 +90,14 @@ const checkIn = async (req, res) => {
     });
   }
 
-  const late = isLateTime(time, req.body.lateCutoff || "08:00");
+  const late = isLateTime(time, req.body.lateCutoff || DEFAULT_LATE_CUTOFF);
 
   if (existing) {
     await Attendance.updateOne(
       { date, studentId: student._id },
       {
         checkInTime: time,
-        status: late ? "Late" : "Present",
+        status: late ? "Late" : "On-time",
         isLate: late,
       }
     );
@@ -93,7 +114,7 @@ const checkIn = async (req, res) => {
     studentId: student._id,
     checkInTime: time,
     checkOutTime: null,
-    status: late ? "Late" : "Present",
+    status: late ? "Late" : "On-time",
     isLate: late,
   });
 
@@ -199,7 +220,7 @@ const daily = async (req, res) => {
       if (row.status === "Absent") {
         acc.absent += 1;
       } else {
-        acc.present += 1;
+        acc.onTime += 1;
       }
 
       if (row.isLate) {
@@ -208,7 +229,7 @@ const daily = async (req, res) => {
 
       return acc;
     },
-    { present: 0, absent: 0, late: 0 }
+    { onTime: 0, absent: 0, late: 0 }
   );
 
   return res.status(200).json({
@@ -221,8 +242,58 @@ const daily = async (req, res) => {
   });
 };
 
+const monthly = async (req, res) => {
+  const monthKey = toMonthKey(req.query.month);
+  if (!monthKey) {
+    return res.status(400).json({
+      message: "Invalid month. Use YYYY-MM format.",
+    });
+  }
+
+  const student = await Student.findOne({ studentId: req.query.studentId });
+  if (!student) {
+    return res.status(404).json({
+      message: "Student not found.",
+    });
+  }
+
+  const [yearText, monthText] = monthKey.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const endDay = String(new Date(year, month, 0).getDate()).padStart(2, "0");
+  const fromDate = `${monthKey}-01`;
+  const toDate = `${monthKey}-${endDay}`;
+
+  const records = await Attendance.find({
+    studentId: student._id,
+    date: {
+      $gte: fromDate,
+      $lte: toDate,
+    },
+  }).sort({ date: 1 });
+
+  const rows = records.map((record) => ({
+    date: record.date,
+    studentId: student.studentId,
+    checkInTime: record.checkInTime,
+    checkOutTime: record.checkOutTime,
+    status: record.status,
+    isLate: record.isLate,
+  }));
+
+  return res.status(200).json({
+    message: "Monthly report fetched successfully!!!",
+    data: {
+      month: monthKey,
+      studentId: student.studentId,
+      rows,
+    },
+  });
+};
+
 module.exports = {
   checkIn,
   checkOut,
   daily,
+  monthly,
 };

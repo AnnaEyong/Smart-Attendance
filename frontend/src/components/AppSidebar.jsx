@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   ScanFace,
@@ -17,6 +17,7 @@ import {
   LogOut,
   Bell,
 } from "lucide-react";
+import { clearAdminToken, fetchAdminProfile, getAdminToken } from "@/lib/api";
 
 const navItems = [
   {
@@ -49,8 +50,15 @@ const navItems = [
 
 export default function AppSidebar({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+  const [adminProfile, setAdminProfile] = useState({
+    fullName: "Admin User",
+    email: "admin@university.edu",
+  });
 
   const openMobileMenu = () => setMobileOpen(true);
 
@@ -61,6 +69,20 @@ export default function AppSidebar({ children }) {
     setMobileOpen(false);
   }, [pathname]);
 
+  // Guard protected layouts: if token is missing, force login.
+  useEffect(() => {
+    const token = getAdminToken();
+    if (!token) {
+      setAuthorized(false);
+      setAuthReady(true);
+      router.replace(`/unauthorized?next=${encodeURIComponent(pathname || "/dashboard")}`);
+      return;
+    }
+
+    setAuthorized(true);
+    setAuthReady(true);
+  }, [pathname, router]);
+
   // Close mobile drawer on resize to desktop
   useEffect(() => {
     const handleResize = () => {
@@ -70,8 +92,70 @@ export default function AppSidebar({ children }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAdminProfile = async () => {
+      try {
+        const response = await fetchAdminProfile();
+        const profile = response?.data;
+
+        if (cancelled || !profile) {
+          return;
+        }
+
+        setAdminProfile({
+          fullName: profile.fullName || "Admin User",
+          email: profile.email || "admin@university.edu",
+        });
+      } catch {
+        if (!cancelled) {
+          const token = getAdminToken();
+          if (!token) {
+            setAuthorized(false);
+            setAuthReady(true);
+            router.replace(`/unauthorized?next=${encodeURIComponent(pathname || "/dashboard")}`);
+            return;
+          }
+
+          setAdminProfile({
+            fullName: "Admin User",
+            email: "admin@university.edu",
+          });
+        }
+      }
+    };
+
+    loadAdminProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, router]);
+
+  const adminInitials = adminProfile.fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "AD";
+
   const isActive = (href) =>
     href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+
+  const handleLogout = () => {
+    setAuthorized(false);
+    clearAdminToken();
+    router.replace("/login");
+  };
+
+  if (!authReady) {
+    return <div className="min-h-screen bg-slate-50" />;
+  }
+
+  if (!authorized) {
+    return null;
+  }
 
   const SidebarContent = ({ isMobile = false }) => (
     <div className="flex h-full flex-col">
@@ -171,22 +255,27 @@ export default function AppSidebar({ children }) {
         className={`m-2 flex items-center gap-3 rounded-2xl bg-slate-50 p-3 ${collapsed && !isMobile ? "justify-center p-2" : ""}`}
       >
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-xs font-bold text-white shadow-sm">
-          AD
+          {adminInitials}
         </div>
 
         {(!collapsed || isMobile) && (
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-semibold text-slate-800">
-              Admin User
+              {adminProfile.fullName}
             </p>
             <p className="truncate text-[10px] text-slate-400">
-              admin@university.edu
+              {adminProfile.email}
             </p>
           </div>
         )}
 
         {(!collapsed || isMobile) && (
-          <button className="cursor-pointer shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="cursor-pointer shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+            aria-label="Logout"
+          >
             <LogOut className="h-3.5 w-3.5" />
           </button>
         )}

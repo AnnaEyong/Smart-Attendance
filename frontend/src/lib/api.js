@@ -1,5 +1,6 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4010";
 const TOKEN_KEY = "smart_attendance_admin_token";
+const TOKEN_COOKIE_KEY = "smart_attendance_admin_token";
 
 async function request(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
@@ -33,7 +34,17 @@ export function getAdminToken() {
     return "";
   }
 
-  return localStorage.getItem(TOKEN_KEY) || "";
+  const localToken = localStorage.getItem(TOKEN_KEY) || "";
+  if (localToken) {
+    return localToken;
+  }
+
+  const cookieToken = document.cookie
+    .split(";")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(`${TOKEN_COOKIE_KEY}=`));
+
+  return cookieToken ? decodeURIComponent(cookieToken.slice(TOKEN_COOKIE_KEY.length + 1)) : "";
 }
 
 export function setAdminToken(token) {
@@ -42,6 +53,7 @@ export function setAdminToken(token) {
   }
 
   localStorage.setItem(TOKEN_KEY, token);
+  document.cookie = `${TOKEN_COOKIE_KEY}=${encodeURIComponent(token)}; Path=/; Max-Age=604800; SameSite=Lax`;
 }
 
 export function clearAdminToken() {
@@ -50,6 +62,7 @@ export function clearAdminToken() {
   }
 
   localStorage.removeItem(TOKEN_KEY);
+  document.cookie = `${TOKEN_COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 export function loginAdmin({ email, password }) {
@@ -107,6 +120,12 @@ export function checkOutStudent(payload) {
 
 export function fetchDailyAttendance(dateKey) {
   return request(`/attendance/daily?date=${encodeURIComponent(dateKey)}`);
+}
+
+export function fetchStudentMonthlyAttendance(studentId, monthKey) {
+  return request(
+    `/attendance/monthly?studentId=${encodeURIComponent(studentId)}&month=${encodeURIComponent(monthKey)}`
+  );
 }
 
 export function fetchAdminProfile() {
