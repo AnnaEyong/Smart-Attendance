@@ -14,6 +14,19 @@ function todayLabel() {
   });
 }
 
+function toSortableMinutes(timeValue) {
+  if (!timeValue || typeof timeValue !== "string") {
+    return -1;
+  }
+
+  const [hours, minutes] = timeValue.split(":").map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return -1;
+  }
+
+  return hours * 60 + minutes;
+}
+
 export default function DashboardPage() {
   const [students, setStudents] = useState([]);
   const [report, setReport] = useState({
@@ -104,14 +117,18 @@ export default function DashboardPage() {
   ];
 
   const recentActivity = useMemo(() => {
-    return (report.rows || []).slice(0, 8).map((row) => ({
-      student: row.studentName,
-      routeId: row.studentId,
-      profileImage: row.profileImage || "",
-      level: row.level || row.grade || "N/A",
-      time: row.checkInTime || "--:--",
-      status: (row.status || "Absent").toLowerCase(),
-    }));
+    return (report.rows || [])
+      .filter((row) => Boolean(row.checkInTime))
+      .sort((a, b) => toSortableMinutes(b.checkInTime) - toSortableMinutes(a.checkInTime))
+      .slice(0, 8)
+      .map((row) => ({
+        student: row.studentName,
+        routeId: row.studentId,
+        profileImage: row.profileImage || "",
+        level: row.level || row.grade || "N/A",
+        time: row.checkInTime,
+        status: (row.status || "On-time").toLowerCase(),
+      }));
   }, [report.rows]);
 
   const statusStyles = {

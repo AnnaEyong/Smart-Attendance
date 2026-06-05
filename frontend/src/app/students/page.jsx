@@ -17,7 +17,7 @@ import {
   UserX,
 } from "lucide-react";
 import Link from "next/link";
-import { deleteStudent, fetchStudents } from "@/lib/api";
+import { deleteStudent, fetchStudentMonthlyAttendance, fetchStudents } from "@/lib/api";
 
 const students = [
   {
@@ -82,7 +82,7 @@ const students = [
     section: "C",
     attendance: 69,
     absences: 11,
-    status: "At Risk",
+    status: "Needs Support",
     tone: "risk",
     avatar: "NM",
   },
@@ -127,10 +127,10 @@ const activity = [
 ];
 
 const levelDistribution = [
-  { label: "Level 12", value: 312, total: 348 },
-  { label: "Level 11", value: 289, total: 320 },
-  { label: "Level 10", value: 254, total: 270 },
-  { label: "Level 9", value: 215, total: 246 },
+  { label: "Level 400", value: 312, total: 348 },
+  { label: "Level 300", value: 289, total: 320 },
+  { label: "Level 200", value: 254, total: 270 },
+  { label: "Level 100", value: 215, total: 246 },
 ];
 
 const toneStyles = {
@@ -160,10 +160,52 @@ function studentSlug(name) {
   return name.toLowerCase().replace(/\s+/g, "-");
 }
 
+function currentMonthKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function weekdaysElapsedInMonth() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const today = now.getDate();
+
+  let weekdays = 0;
+  for (let day = 1; day <= today; day += 1) {
+    const date = new Date(year, month, day);
+    const weekDay = date.getDay();
+    if (weekDay !== 0 && weekDay !== 6) {
+      weekdays += 1;
+    }
+  }
+
+  return weekdays;
+}
+
+function statusFromAttendanceRate(rate) {
+  if (rate >= 95) {
+    return { status: "Excellent", tone: "excellent" };
+  }
+
+  if (rate >= 85) {
+    return { status: "Good", tone: "good" };
+  }
+
+  if (rate >= 60) {
+    return { status: "Warning", tone: "warning" };
+  }
+
+  return { status: "Needs Support", tone: "risk" };
+}
+
 export default function StudentsPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All Students");
   const [backendStudents, setBackendStudents] = useState([]);
+  const [attendanceByStudent, setAttendanceByStudent] = useState({});
   const [openActionId, setOpenActionId] = useState("");
   const [deletingStudentId, setDeletingStudentId] = useState("");
   const [actionError, setActionError] = useState("");
@@ -171,10 +213,63 @@ export default function StudentsPage() {
   const loadStudents = async () => {
     try {
       const response = await fetchStudents();
-      setBackendStudents(Array.isArray(response?.data) ? response.data : []);
+      const fetchedStudents = Array.isArray(response?.data) ? response.data : [];
+      setBackendStudents(fetchedStudents);
+
+      const monthKey = currentMonthKey();
+      const expectedSchoolDays = weekdaysElapsedInMonth();
+      const perStudentStats = await Promise.all(
+        fetchedStudents.map(async (student) => {
+          const studentId = student?.studentId;
+          if (!studentId) {
+            return null;
+          }
+
+          try {
+            const monthly = await fetchStudentMonthlyAttendance(studentId, monthKey);
+            const rows = Array.isArray(monthly?.data?.rows) ? monthly.data.rows : [];
+
+            const presentDays = rows.filter((row) => {
+              const status = String(row?.status || "").toLowerCase();
+              return status === "on-time" || status === "late" || Boolean(row?.checkInTime);
+            }).length;
+
+            const explicitAbsentDays = rows.filter(
+              (row) => String(row?.status || "").toLowerCase() === "absent"
+            ).length;
+
+            const inferredAbsentDays = Math.max(0, expectedSchoolDays - presentDays);
+            const absences = Math.max(explicitAbsentDays, inferredAbsentDays);
+
+            const trackedDays = Math.max(expectedSchoolDays, presentDays + explicitAbsentDays);
+            const attendance = trackedDays > 0 ? Math.round((presentDays / trackedDays) * 100) : 0;
+
+            return [
+              studentId,
+              {
+                attendance,
+                absences,
+                ...statusFromAttendanceRate(attendance),
+              },
+            ];
+          } catch {
+            return [
+              studentId,
+              {
+                attendance: 0,
+                absences: 0,
+                ...statusFromAttendanceRate(0),
+              },
+            ];
+          }
+        }),
+      );
+
+      setAttendanceByStudent(Object.fromEntries(perStudentStats.filter(Boolean)));
       setActionError("");
     } catch {
       setBackendStudents([]);
+      setAttendanceByStudent({});
     }
   };
 
@@ -210,6 +305,12 @@ export default function StudentsPage() {
       const name = student.fullName || "Unknown Student";
       const studentId = student.studentId || "N/A";
       const level = student.level || student.grade || "N/A";
+      const monthlyStats = attendanceByStudent[studentId] || {
+        attendance: 0,
+        absences: 0,
+        status: "Needs Support",
+        tone: "risk",
+      };
 
       return {
         routeId: studentId,
@@ -217,15 +318,15 @@ export default function StudentsPage() {
         id: `#${studentId}`,
         level,
         section: "-",
-        attendance: 0,
-        absences: 0,
-        status: "Good",
-        tone: "good",
+        attendance: monthlyStats.attendance,
+        absences: monthlyStats.absences,
+        status: monthlyStats.status,
+        tone: monthlyStats.tone,
         avatar: initials(name),
         profileImage: student.profileImage || "",
       };
     });
-  }, [backendStudents]);
+  }, [backendStudents, attendanceByStudent]);
 
   const filteredStudents = useMemo(() => {
     return studentRows.filter((student) => {
@@ -354,13 +455,13 @@ export default function StudentsPage() {
                 <ChevronDown className="h-4 w-4 text-slate-400" />
               </button>
 
-              <button className="flex cursor-pointer h-11 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              {/* <button className="flex cursor-pointer h-11 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700">
                 <span className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-slate-400" />
                   Sections
                 </span>
                 <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button>
+              </button> */}
 
               <button
                 onClick={() => setFilter((current) => (current === "All Students" ? "Excellent" : "All Students"))}
@@ -370,27 +471,27 @@ export default function StudentsPage() {
               </button>
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+            <div className="mt-4 flex h-[560px] flex-col overflow-hidden rounded-2xl border border-slate-200">
               {actionError ? (
                 <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">{actionError}</div>
               ) : null}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-215">
+              <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+                <table className="w-full w-fit">
                   <thead>
                     <tr className="bg-sky-700 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-300">
-                      <th className="px-4 py-3">Student</th>
-                      <th className="px-4 py-3">ID</th>
-                      <th className="px-4 py-3">Level</th>
-                      <th className="px-4 py-3">Attendance</th>
-                      <th className="px-4 py-3">Absences</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Actions</th>
+                      <th className="pl-4 w-[200px] py-3">Student</th>
+                      {/* <th className="px-4 py-3">ID</th> */}
+                      {/* <th className="px-4 py-3">Level</th> */}
+                      <th className=" py-3">Attendance</th>
+                      <th className=" py-3">Absences</th>
+                      <th className=" py-3">Status</th>
+                      <th className=" py-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                       {filteredStudents.map((student) => (
                       <tr key={student.id} className="border-b border-dashed border-sky-100 text-sm last:border-b-0">
-                        <td className="px-4 py-4">
+                        <td className="pl-4 w-[200px] py-4">
                           <div className="flex items-center gap-3">
                             {student.profileImage ? (
                               <img
@@ -411,11 +512,11 @@ export default function StudentsPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-slate-500">{student.id}</td>
-                        <td className="px-4 py-4 text-slate-600">{student.level}</td>
-                        <td className="px-4 py-4 text-slate-700">{student.attendance}%</td>
-                        <td className="px-4 py-4 text-slate-700">{student.absences}</td>
-                        <td className="px-4 py-4">
+                        {/* <td className="px-4 py-4 text-slate-500">{student.id}</td> */}
+                        {/* <td className="px-4 py-4 text-slate-600">{student.level}</td> */}
+                        <td className="  py-4 w-[100px] text-slate-700">{student.attendance}%</td>
+                        <td className=" py-4 w-[90px] text-slate-700">{student.absences}</td>
+                        <td className="  w-[150px] py-4">
                           <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${toneStyles[student.tone]}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${toneDots[student.tone]}`} />
                             {student.status}

@@ -14,6 +14,21 @@ const adminLoginSchema = z.object({
   password: z.string().min(1),
 });
 
+const adminVerifyLoginOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().regex(/^\d{6}$/),
+});
+
+const adminRequestOtpSchema = z.object({
+  email: z.string().email(),
+});
+
+const adminResetPasswordWithOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().regex(/^\d{6}$/),
+  newPassword: z.string().min(6),
+});
+
 const adminCreateValidation = (req, res, next) => {
   const result = Validation(adminCreateSchema, req.body);
   if (!result.isValid) {
@@ -32,7 +47,37 @@ const adminLoginValidation = (req, res, next) => {
   return next();
 };
 
+const adminVerifyLoginOtpValidation = (req, res, next) => {
+  const result = Validation(adminVerifyLoginOtpSchema, req.body);
+  if (!result.isValid) {
+    return res.status(400).json(result.error);
+  }
+
+  return next();
+};
+
+const adminRequestOtpValidation = (req, res, next) => {
+  const result = Validation(adminRequestOtpSchema, req.body);
+  if (!result.isValid) {
+    return res.status(400).json(result.error);
+  }
+
+  return next();
+};
+
+const adminResetPasswordWithOtpValidation = (req, res, next) => {
+  const result = Validation(adminResetPasswordWithOtpSchema, req.body);
+  if (!result.isValid) {
+    return res.status(400).json(result.error);
+  }
+
+  return next();
+};
+
 module.exports = {
   adminCreateValidation,
   adminLoginValidation,
+  adminVerifyLoginOtpValidation,
+  adminRequestOtpValidation,
+  adminResetPasswordWithOtpValidation,
 };

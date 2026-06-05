@@ -217,14 +217,12 @@ const daily = async (req, res) => {
 
   const summary = rows.reduce(
     (acc, row) => {
-      if (row.status === "Absent") {
-        acc.absent += 1;
-      } else {
+      if (row.status === "On-time") {
         acc.onTime += 1;
-      }
-
-      if (row.isLate) {
+      } else if (row.status === "Late") {
         acc.late += 1;
+      } else {
+        acc.absent += 1;
       }
 
       return acc;

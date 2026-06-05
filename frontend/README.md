@@ -100,6 +100,8 @@ Defined in src/lib/api.js:
 Set backend base URL with environment variable:
 
 - NEXT_PUBLIC_API_BASE_URL (default: http://localhost:4010)
+- NEXT_PUBLIC_FACE_API_MODEL_URL (default: /models/face-api)
+- NEXT_PUBLIC_FACE_MATCH_ENGINE (optional: auto | custom, default: auto)
 
 ## Data Used In The Process
 
@@ -140,9 +142,11 @@ Use this short script during your presentation:
 	- Status is standardized to On-time, Late, and Absent.
 
 4. System limitations and honest disclosure:
-	- This is a lightweight custom descriptor system.
+	- The app now supports a hybrid descriptor system.
+	- face-api.js is used for new enrollments when available.
+	- Legacy students keep using the custom descriptor fallback.
 	- Performance depends on lighting, camera quality, and face angle.
-	- Production systems should add stronger face models and liveness detection.
+	- Production systems should add liveness detection and stricter anti-spoofing controls.
 
 ## Running The Frontend
 
@@ -159,6 +163,6 @@ Make sure backend is running and reachable by NEXT_PUBLIC_API_BASE_URL.
 
 ## Important Notes
 
-- Current face matching is a lightweight custom descriptor pipeline (not a deep-learning face recognition model).
-- Recognition quality depends on camera quality, lighting, and capture angle.
-- For production-grade biometric verification, integrate a dedicated face recognition engine and liveness checks.
+- Face matching is hybrid: face-api.js first, then custom descriptor fallback for legacy records.
+- Local face-api model files are bundled under public/models/face-api for reliable offline loading.
+- Recognition quality still depends on camera quality, lighting, and capture angle.

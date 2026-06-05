@@ -39,6 +39,32 @@ Server starts on `http://localhost:4000` by default.
 
 Make sure MongoDB is running and `.env` has a valid `MONGO_URI`.
 
+## Email OTP Setup
+
+OTP emails (login verification and reset password) require SMTP settings in `.env`.
+
+Copy `.env.example` to `.env`, then configure:
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE` (`true` for SSL ports like 465, otherwise `false`)
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+
+Example for Gmail SMTP:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM="Smart Attendance <your-email@gmail.com>"
+```
+
+If using Gmail, use an App Password (not your normal account password).
+
 ## API Endpoints
 
 ### Health

@@ -33,6 +33,11 @@ const studentSchema = new mongoose.Schema(
         message: "faceDescriptor must contain exactly 128 numbers",
       },
     },
+    faceDescriptorEngine: {
+      type: String,
+      enum: ["custom", "face-api"],
+      default: "custom",
+    },
   },
   { timestamps: true },
 );

@@ -23,6 +23,7 @@ const normalizeStudentPayload = (body = {}) => {
     guardianEmail: body.guardianEmail,
     profileImage: body.profileImage || "",
     faceDescriptor: body.faceDescriptor,
+    faceDescriptorEngine: body.faceDescriptorEngine,
   };
 };
 

@@ -25,15 +25,19 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
 import { Toaster, toast } from "sonner";
-import { loginAdmin, setAdminToken } from "@/lib/api";
+import { loginAdmin, setAdminToken, verifyAdminLoginOtp } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpEmail, setOtpEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [loginStep, setLoginStep] = useState("credentials");
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -46,14 +50,35 @@ export default function LoginPage() {
 
     try {
       const response = await loginAdmin({ email, password });
+      setOtpEmail(response?.data?.email || email);
+      setLoginStep("otp");
+      toast.success(response?.message || "OTP sent");
+    } catch (error) {
+      toast.error(error.message || "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifyLoginOtp(event) {
+    event.preventDefault();
+
+    if (!otpEmail || !/^\d{6}$/.test(otp)) {
+      toast.error("Enter a valid 6-digit OTP");
+      return;
+    }
+
+    setOtpLoading(true);
+    try {
+      const response = await verifyAdminLoginOtp({ email: otpEmail, otp });
       setAdminToken(response?.data?.token || "");
       toast.success(response?.message || "Login successful");
       const nextPath = searchParams.get("next");
       router.push(nextPath || "/dashboard");
     } catch (error) {
-      toast.error(error.message || "Login failed");
+      toast.error(error.message || "OTP verification failed");
     } finally {
-      setLoading(false);
+      setOtpLoading(false);
     }
   }
 
@@ -164,60 +189,109 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <form onSubmit={handleLogin} noValidate className="mt-6 space-y-4">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Email</Label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter admin email"
-                required
-                className="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-slate-800 placeholder:text-slate-400 focus:bg-white"
-              />
-            </div>
+          <form
+            onSubmit={loginStep === "credentials" ? handleLogin : handleVerifyLoginOtp}
+            noValidate
+            className="mt-6 space-y-4"
+          >
+            {loginStep === "credentials" ? (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Email</Label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter admin email"
+                    required
+                    className="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-slate-800 placeholder:text-slate-400 focus:bg-white"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Password</Label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  required
-                  className="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 pr-12 text-slate-800 placeholder:text-slate-400 focus:bg-white"
-                />
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      required
+                      className="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 pr-12 text-slate-800 placeholder:text-slate-400 focus:bg-white"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-sm">
+                  <label className="inline-flex items-center gap-2 text-slate-600">
+                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-700" />
+                    Remember me
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/reset-password${email ? `?email=${encodeURIComponent(email)}` : ""}`)}
+                    className="font-medium text-sky-700 transition hover:text-sky-800"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 text-white transition hover:bg-sky-600 disabled:opacity-60"
+                >
+                  {loading ? "Sending OTP..." : "Continue"}
+                  {!loading ? <ArrowRight className="h-4 w-4" /> : null}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                  Verification code sent to {otpEmail}.
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">OTP code</Label>
+                  <Input
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Enter 6-digit code"
+                    inputMode="numeric"
+                    className="h-11 rounded-xl border-slate-200 bg-slate-50 px-4 text-slate-800 placeholder:text-slate-400 focus:bg-white"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={otpLoading}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 text-white transition hover:bg-sky-600 disabled:opacity-60"
+                >
+                  {otpLoading ? "Verifying OTP..." : "Verify and sign in"}
+                  {!otpLoading ? <ArrowRight className="h-4 w-4" /> : null}
+                </Button>
 
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                  onClick={() => {
+                    setLoginStep("credentials");
+                    setOtp("");
+                  }}
+                  className="w-full text-sm font-medium text-slate-600 transition hover:text-slate-900"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  Back to email and password
                 </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <label className="inline-flex items-center gap-2 text-slate-600">
-                <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-700" />
-                Remember me
-              </label>
-
-              <a href="#" className="font-medium text-sky-700 transition hover:text-sky-800">
-                Forgot password?
-              </a>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 text-white transition hover:bg-sky-600 disabled:opacity-60"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-              {!loading ? <ArrowRight className="h-4 w-4" /> : null}
-            </Button>
+              </>
+            )}
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-start gap-3">

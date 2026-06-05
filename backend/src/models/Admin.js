@@ -21,6 +21,30 @@ const adminSchema = new mongoose.Schema(
       required: true,
     },
 
+    passwordResetOtpHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    passwordResetOtpExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    loginOtpHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    loginOtpExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
     isActive: {
       type: Boolean,
       default: true,

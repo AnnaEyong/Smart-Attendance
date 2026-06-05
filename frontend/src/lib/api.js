@@ -72,6 +72,27 @@ export function loginAdmin({ email, password }) {
   });
 }
 
+export function verifyAdminLoginOtp({ email, otp }) {
+  return request("/admin/verify-login-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, otp }),
+  });
+}
+
+export function requestAdminPasswordOtp({ email }) {
+  return request("/admin/request-password-otp", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetAdminPasswordWithOtp({ email, otp, newPassword }) {
+  return request("/admin/reset-password-with-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, otp, newPassword }),
+  });
+}
+
 export function createStudent(payload) {
   return request("/student/create", {
     method: "POST",

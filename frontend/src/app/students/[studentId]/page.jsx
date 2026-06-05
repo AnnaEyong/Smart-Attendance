@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import {
   fetchDailyAttendance,
+  fetchDepartments,
   fetchStudentById,
   fetchStudentMonthlyAttendance,
   updateStudent,
@@ -52,6 +53,11 @@ function toLocalDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function isWeekendDate(date) {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
 function buildMonthMap(monthRowsByDate, selectedMonthDate, todayDateKey) {
   const year = selectedMonthDate.getFullYear();
   const monthIndex = selectedMonthDate.getMonth();
@@ -59,16 +65,21 @@ function buildMonthMap(monthRowsByDate, selectedMonthDate, todayDateKey) {
   const map = {};
 
   for (let day = 1; day <= daysInMonth; day += 1) {
-    const dayDateKey = toLocalDateKey(new Date(year, monthIndex, day));
+    const currentDate = new Date(year, monthIndex, day);
+    const dayDateKey = toLocalDateKey(currentDate);
 
     if (dayDateKey > todayDateKey) {
       map[day] = "neutral";
       continue;
     }
 
+    if (isWeekendDate(currentDate)) {
+      map[day] = "neutral";
+      continue;
+    }
+
     const row = monthRowsByDate[dayDateKey];
-    // Keep each day pinned to its date key from the API.
-    map[day] = row?.status ? String(row.status).toLowerCase() : "neutral";
+    map[day] = row?.status ? String(row.status).toLowerCase() : "absent";
   }
 
   return map;
@@ -93,6 +104,7 @@ export default function StudentDetailPage() {
   const [student, setStudent] = useState(null);
   const [todayRow, setTodayRow] = useState(null);
   const [monthRows, setMonthRows] = useState({});
+  const [departmentFacultyMap, setDepartmentFacultyMap] = useState({});
   const [selectedDateKey, setSelectedDateKey] = useState(() => toLocalDateKey(new Date()));
   const [selectedMonthDate, setSelectedMonthDate] = useState(() => {
     const now = new Date();
@@ -217,9 +229,10 @@ export default function StudentDetailPage() {
 
     try {
       const dateKey = toLocalDateKey(new Date());
-      const [studentResponse, dailyResponse] = await Promise.all([
+      const [studentResponse, dailyResponse, departmentsResponse] = await Promise.all([
         fetchStudentById(studentId),
         fetchDailyAttendance(dateKey),
+        fetchDepartments(),
       ]);
 
       const loadedStudent = studentResponse?.data || null;
@@ -228,6 +241,22 @@ export default function StudentDetailPage() {
 
       setStudent(loadedStudent);
       setTodayRow(row);
+
+      const departments = Array.isArray(departmentsResponse?.data) ? departmentsResponse.data : [];
+      const facultyByDepartmentName = departments.reduce((acc, department) => {
+        const departmentName = typeof department?.name === "string" ? department.name.trim() : "";
+        if (!departmentName) {
+          return acc;
+        }
+
+        const facultyName = typeof department?.facultyId?.name === "string"
+          ? department.facultyId.name.trim()
+          : "";
+
+        acc[departmentName] = facultyName || "Not assigned";
+        return acc;
+      }, {});
+      setDepartmentFacultyMap(facultyByDepartmentName);
 
       const fullName = loadedStudent?.fullName || "";
       const [splitFirst = "", ...rest] = fullName.split(" ");
@@ -269,13 +298,13 @@ export default function StudentDetailPage() {
     const monthPrefix = `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
     if (monthPrefix === currentMonthPrefix) {
-      if (selectedDateKey !== todayDateKey) {
+      if (!selectedDateKey || !String(selectedDateKey).startsWith(`${monthPrefix}-`)) {
         setSelectedDateKey(todayDateKey);
       }
       return;
     }
 
-    if (!String(selectedDateKey || "").startsWith(`${monthPrefix}-`)) {
+    if (selectedDateKey && !String(selectedDateKey).startsWith(`${monthPrefix}-`)) {
       setSelectedDateKey("");
     }
   }, [selectedMonthDate, selectedDateKey]);
@@ -396,12 +425,14 @@ export default function StudentDetailPage() {
   };
 
   const selectedRow = monthRows[selectedDateKey] || null;
+  const selectedDayNumber = selectedDateKey ? Number(String(selectedDateKey).slice(-2)) : null;
+  const selectedDayStatus = selectedDayNumber ? attendanceMap[selectedDayNumber] || "neutral" : "neutral";
   const selectedStatusLabel = !selectedDateKey
     ? "Select date"
-    : selectedRow?.status || (selectedDateKey > toLocalDateKey(new Date()) ? "Upcoming" : "No record");
+    : selectedRow?.status || (selectedDayStatus === "absent" ? "Absent" : selectedDateKey > toLocalDateKey(new Date()) ? "Upcoming" : "No record");
   const normalizedSelectedStatus = selectedRow?.status
     ? String(selectedRow.status).toLowerCase()
-    : "neutral";
+    : selectedDayStatus;
 
   if (loading) {
     return <StudentDetailSkeleton />;
@@ -424,6 +455,8 @@ export default function StudentDetailPage() {
   const status = todayRow?.status || "Absent";
   const normalizedStatus = String(status).toLowerCase();
   const profileImage = isEditMode ? formData.profileImage : student.profileImage;
+  const departmentName = student.department || "Not assigned";
+  const facultyName = departmentFacultyMap[departmentName] || "Not assigned";
   const guardianName = student.guardianName || "Not provided";
   const guardianPhone = student.guardianPhone || "Not provided";
   const guardianEmail = student.guardianEmail || "Not provided";
@@ -463,8 +496,8 @@ export default function StudentDetailPage() {
                       {avatar}
                     </div>
                   )}
-                  <label className="absolute bottom-1 right-1 grid h-7 w-7 cursor-pointer place-items-center rounded-full bg-sky-700 text-white ring-4 ring-white transition hover:bg-sky-600">
-                    <Pencil className="h-3.5 w-3.5" />
+                  <label className="absolute bottom-1 right-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full bg-sky-700 text-white ring-3 ring-white transition hover:bg-sky-600">
+                    <Pencil className="h-3 w-3" />
                     <input
                       type="file"
                       accept="image/*"
@@ -476,10 +509,11 @@ export default function StudentDetailPage() {
                 </div>
 
                 <h1 className="mt-4 text-xl font-semibold text-slate-900">{fullName}</h1>
-                <p className="mt-1 text-sm text-slate-500">Student ID: {student.studentId}</p>
-                <p className="mt-4 text-xs text-slate-500">
+                <p className="mt-1 text-sm text-slate-500">Faculty: {facultyName}</p>
+                <p className="mt-0.5 text-sm text-slate-500">Department: {departmentName}</p>
+                {/* <p className="mt-4 text-xs text-slate-500">
                   {saving ? "Updating photo..." : "Use the edit icon on the photo to upload or replace the profile image."}
-                </p>
+                </p> */}
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-3">

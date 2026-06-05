@@ -24,7 +24,7 @@ const summaryCards = (summary, registeredTotal, reportTotal) => {
     {
       label: "Overall Attendance",
       value: `${attendanceRate}%`,
-      change: `${onTimeCount} on-time`,
+      change: `${onTimeCount} present`,
       note: "Students who checked in today",
       accent: "emerald",
       Icon: TrendingUp,

@@ -16,6 +16,7 @@ const studentCreateSchema = z
     guardianPhone: z.string().min(1),
     guardianEmail: z.string().email(),
     faceDescriptor: z.array(z.number()).length(128).optional(),
+    faceDescriptorEngine: z.enum(["custom", "face-api"]).optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.studentId && !data.id) {

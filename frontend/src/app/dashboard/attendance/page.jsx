@@ -13,6 +13,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { checkInStudent, checkOutStudent, fetchDailyAttendance, fetchStudents } from "@/lib/api";
+import { extractFaceApiDescriptor, preloadFaceApiModels } from "@/lib/face-api.service";
 
 function nowTime() {
   return new Date().toLocaleTimeString("en-GB", {
@@ -22,9 +23,42 @@ function nowTime() {
 }
 
 const DESCRIPTOR_SIZE = 128;
-const MATCH_DISTANCE_THRESHOLD = 0.16;
-const MATCH_GAP_THRESHOLD = 0.025;
+const CUSTOM_MATCH_DISTANCE_THRESHOLD = 0.16;
+const CUSTOM_MATCH_GAP_THRESHOLD = 0.025;
+const FACE_API_MATCH_DISTANCE_THRESHOLD = 0.52;
+const FACE_API_MATCH_GAP_THRESHOLD = 0.03;
 const MATCH_CONFIRM_WINDOW_MS = 3500;
+
+const findBestCandidateMatch = (capturedDescriptor, candidates, { distanceThreshold, gapThreshold }) => {
+  let bestMatch = null;
+  let secondBestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const distance = euclideanDistance(capturedDescriptor, candidate.faceDescriptor);
+    if (!bestMatch || distance < bestMatch.distance) {
+      if (bestMatch) {
+        secondBestDistance = bestMatch.distance;
+      }
+
+      bestMatch = {
+        student: candidate,
+        distance,
+      };
+    } else if (distance < secondBestDistance) {
+      secondBestDistance = distance;
+    }
+  }
+
+  if (!bestMatch || bestMatch.distance > distanceThreshold) {
+    return { status: "not-recognized", bestMatch: null };
+  }
+
+  if (secondBestDistance - bestMatch.distance < gapThreshold) {
+    return { status: "ambiguous", bestMatch: null };
+  }
+
+  return { status: "matched", bestMatch };
+};
 
 const hasLikelyFaceInFrame = (pixels, width, height) => {
   if (!pixels || !width || !height) {
@@ -201,8 +235,8 @@ const euclideanDistance = (a, b) => {
   return Math.sqrt(sum);
 };
 
-const confidenceFromDistance = (distance) => {
-  const score = Math.max(0, 1 - distance / MATCH_DISTANCE_THRESHOLD);
+const confidenceFromDistance = (distance, distanceThreshold) => {
+  const score = Math.max(0, 1 - distance / distanceThreshold);
   return `${Math.max(60, score * 100).toFixed(1)}%`;
 };
 
@@ -263,6 +297,7 @@ export default function TakeAttendancePage() {
   const scanInProgressRef = useRef(false);
   const lastMatchedStudentRef = useRef({ id: "", at: 0 });
   const pendingMatchRef = useRef({ id: "", at: 0, distance: Number.POSITIVE_INFINITY });
+  const successResetTimeoutRef = useRef(null);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
@@ -289,6 +324,7 @@ export default function TakeAttendancePage() {
         profileImage: student.profileImage || "",
         className: student.level || student.grade || "N/A",
         faceDescriptor: Array.isArray(student.faceDescriptor) ? student.faceDescriptor : null,
+        faceDescriptorEngine: student.faceDescriptorEngine === "face-api" ? "face-api" : "custom",
       }));
       setStudentsWithBiometrics(biometricRows);
     } catch {
@@ -335,6 +371,10 @@ export default function TakeAttendancePage() {
   }, []);
 
   const stopCamera = () => {
+    if (successResetTimeoutRef.current) {
+      clearTimeout(successResetTimeoutRef.current);
+      successResetTimeoutRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -344,6 +384,8 @@ export default function TakeAttendancePage() {
     }
     setVideoReady(false);
     setFaceDetected(false);
+    setIdentified(false);
+    setSuccess(false);
     pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
   };
 
@@ -375,6 +417,7 @@ export default function TakeAttendancePage() {
           try {
             await video.play();
             setVideoReady(true);
+            preloadFaceApiModels();
           } catch {
             setCameraError("Camera started but preview could not play.");
           }
@@ -395,22 +438,6 @@ export default function TakeAttendancePage() {
 
     return () => stopCamera();
   }, [cameraActive]);
-
-  useEffect(() => {
-    if (!videoReady) {
-      setIdentified(false);
-      setSuccess(false);
-      return;
-    }
-
-    const identifiedTimer = setTimeout(() => setIdentified(true), 900);
-    const successTimer = setTimeout(() => setSuccess(true), 1800);
-
-    return () => {
-      clearTimeout(identifiedTimer);
-      clearTimeout(successTimer);
-    };
-  }, [videoReady]);
 
   useEffect(() => {
     if (!cameraActive || !videoReady) {
@@ -463,6 +490,7 @@ export default function TakeAttendancePage() {
     const frameQuality = evaluateFrameQuality(framePixels, canvas.width, canvas.height);
     if (!frameQuality.ok) {
       setFaceDetected(false);
+      setIdentified(false);
 
       if (frameQuality.reason === "too-dark") {
         setCameraError("Lighting is too low. Please move to a brighter area.");
@@ -479,6 +507,7 @@ export default function TakeAttendancePage() {
     setFaceDetected(foundFace);
 
     if (!foundFace) {
+      setIdentified(false);
       setCameraError("");
       return;
     }
@@ -500,38 +529,57 @@ export default function TakeAttendancePage() {
     }
 
     try {
-      const capturedDescriptor = await buildFaceDescriptorFromDataUrl(imageData);
+      const faceApiCandidates = candidates.filter((student) => student.faceDescriptorEngine === "face-api");
+      const customCandidates = candidates.filter((student) => student.faceDescriptorEngine !== "face-api");
 
+      let engineUsed = "";
       let bestMatch = null;
-      let secondBestDistance = Number.POSITIVE_INFINITY;
-      for (const candidate of candidates) {
-        const distance = euclideanDistance(capturedDescriptor, candidate.faceDescriptor);
-        if (!bestMatch || distance < bestMatch.distance) {
-          if (bestMatch) {
-            secondBestDistance = bestMatch.distance;
+      let rejectionStatus = "";
+
+      if (faceApiCandidates.length) {
+        const faceApiDescriptor = await extractFaceApiDescriptor(imageData);
+        if (Array.isArray(faceApiDescriptor) && faceApiDescriptor.length === DESCRIPTOR_SIZE) {
+          const faceApiMatch = findBestCandidateMatch(faceApiDescriptor, faceApiCandidates, {
+            distanceThreshold: FACE_API_MATCH_DISTANCE_THRESHOLD,
+            gapThreshold: FACE_API_MATCH_GAP_THRESHOLD,
+          });
+
+          if (faceApiMatch.status === "matched") {
+            bestMatch = faceApiMatch.bestMatch;
+            engineUsed = "face-api";
+          } else {
+            rejectionStatus = faceApiMatch.status;
           }
-          bestMatch = {
-            student: candidate,
-            distance,
-          };
-        } else if (distance < secondBestDistance) {
-          secondBestDistance = distance;
         }
       }
 
-      if (!bestMatch || bestMatch.distance > MATCH_DISTANCE_THRESHOLD) {
-        setCameraError("Face not recognized. Please align the face and try again.");
-        pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
-        return;
+      if (!bestMatch && customCandidates.length) {
+        const customDescriptor = await buildFaceDescriptorFromDataUrl(imageData);
+        const customMatch = findBestCandidateMatch(customDescriptor, customCandidates, {
+          distanceThreshold: CUSTOM_MATCH_DISTANCE_THRESHOLD,
+          gapThreshold: CUSTOM_MATCH_GAP_THRESHOLD,
+        });
+
+        if (customMatch.status === "matched") {
+          bestMatch = customMatch.bestMatch;
+          engineUsed = "custom";
+        } else {
+          rejectionStatus = customMatch.status;
+        }
       }
 
-      if (secondBestDistance - bestMatch.distance < MATCH_GAP_THRESHOLD) {
-        setCameraError("Face match is ambiguous. Please look straight at the camera and try again.");
+      if (!bestMatch) {
+        setIdentified(false);
+        const errorMessage = rejectionStatus === "ambiguous"
+          ? "Face match is ambiguous. Please look straight at the camera and try again."
+          : "Face not recognized. Please align the face and try again.";
+        setCameraError(errorMessage);
         pendingMatchRef.current = { id: "", at: 0, distance: Number.POSITIVE_INFINITY };
         return;
       }
 
       const matchedStudentName = bestMatch.student.name;
+      setIdentified(true);
 
       const pendingNow = Date.now();
       const pendingMatch = pendingMatchRef.current;
@@ -579,11 +627,22 @@ export default function TakeAttendancePage() {
         id: bestMatch.student.id,
         at: matchedNow,
       };
+      setSuccess(true);
+      if (successResetTimeoutRef.current) {
+        clearTimeout(successResetTimeoutRef.current);
+      }
+      successResetTimeoutRef.current = setTimeout(() => {
+        setSuccess(false);
+        successResetTimeoutRef.current = null;
+      }, 4000);
 
       setLatestRecognitions((current) => {
         const latestEvent = {
           ...bestMatch.student,
-          confidence: confidenceFromDistance(bestMatch.distance),
+          confidence: confidenceFromDistance(
+            bestMatch.distance,
+            engineUsed === "face-api" ? FACE_API_MATCH_DISTANCE_THRESHOLD : CUSTOM_MATCH_DISTANCE_THRESHOLD,
+          ),
           time: recognitionTime,
           mode: attendanceMode,
           sortValue: toSortableMinutes(recognitionTime),
@@ -599,9 +658,30 @@ export default function TakeAttendancePage() {
       setCameraError("");
       await loadSummary();
     } catch (error) {
+      setSuccess(false);
       setCameraError(error.message || "Unable to save attendance");
     }
   };
+
+  const liveStatusLabel = success
+    ? "ATTENDANCE SAVED"
+    : identified
+      ? "STUDENT IDENTIFIED"
+      : faceDetected
+        ? "SCANNING"
+        : videoReady
+          ? "WAITING FOR FACE"
+          : "WAITING FOR CAMERA";
+
+  const liveStatusDotClass = success
+    ? "bg-emerald-300"
+    : identified
+      ? "bg-sky-300"
+      : faceDetected
+        ? "animate-pulse bg-amber-300"
+        : videoReady
+          ? "bg-amber-300"
+          : "bg-slate-400";
 
   return (
     <div className="min-h-full bg-slate-50 p-4 md:p-6 lg:p-8">
@@ -708,8 +788,8 @@ export default function TakeAttendancePage() {
 
                     <div className="absolute inset-0 z-20 flex items-center justify-center">
                       <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-wide text-white shadow-lg backdrop-blur-sm">
-                        <span className={`h-2 w-2 rounded-full ${videoReady ? (faceDetected ? "animate-pulse bg-emerald-300" : "bg-amber-300") : "bg-slate-400"}`} />
-                        {videoReady ? (faceDetected ? "FACE DETECTED - SCANNING" : "WAITING FOR FACE") : "WAITING FOR CAMERA"}
+                        <span className={`h-2 w-2 rounded-full ${liveStatusDotClass}`} />
+                        {liveStatusLabel}
                       </div>
                     </div>
 
@@ -732,13 +812,13 @@ export default function TakeAttendancePage() {
                 <div className="mx-auto mt-5 w-full max-w-70 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-xs">
                   <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-2">
                     <div className="grid place-items-center gap-1.5">
-                      <span className={`grid h-8 w-8 place-items-center rounded-full text-white ${videoReady ? "bg-sky-700" : "bg-slate-400"}`}>
+                      <span className={`grid h-8 w-8 place-items-center rounded-full text-white ${faceDetected ? "bg-sky-700" : "bg-slate-400"}`}>
                         <Camera className="h-4 w-4" />
                       </span>
-                      <span className="text-[11px] font-semibold text-sky-800">Scanning</span>
+                      <span className={`text-[11px] font-semibold ${faceDetected ? "text-sky-800" : "text-slate-500"}`}>Scanning</span>
                     </div>
 
-                    <div className={`h-0.5 rounded-full ${identified ? "bg-sky-500" : "bg-slate-300"}`} />
+                    <div className={`h-0.5 rounded-full ${faceDetected && identified ? "bg-sky-500" : "bg-slate-300"}`} />
 
                     <div className="grid place-items-center gap-1.5">
                       <span className={`grid h-8 w-8 place-items-center rounded-full text-white ${identified ? "bg-sky-700" : "bg-slate-400"}`}>

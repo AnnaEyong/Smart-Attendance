@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { X, Shield, Camera, Check, AlertCircle, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createStudent, fetchDepartments } from "@/lib/api";
+import { extractFaceApiDescriptor, preloadFaceApiModels } from "@/lib/face-api.service";
 
 export default function RegisterStudentModal() {
   const router = useRouter();
@@ -69,7 +70,7 @@ export default function RegisterStudentModal() {
     };
   }, [cameraActive]);
 
-  const stopCamera = () => {
+  function stopCamera() {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -78,9 +79,9 @@ export default function RegisterStudentModal() {
       videoRef.current.srcObject = null;
     }
     setVideoReady(false);
-  };
+  }
 
-  const startCamera = async () => {
+  async function startCamera() {
     try {
       setCameraError("");
       setVideoReady(false);
@@ -108,6 +109,7 @@ export default function RegisterStudentModal() {
           try {
             await video.play();
             setVideoReady(true);
+            preloadFaceApiModels();
           } catch {
             setCameraError("Camera started but preview could not play. Tap enable camera again.");
           }
@@ -118,7 +120,7 @@ export default function RegisterStudentModal() {
       setCameraActive(false);
       setCameraError("Unable to access camera. Please allow camera permissions and try again.");
     }
-  };
+  }
 
   const captureFace = () => {
     if (videoRef.current && canvasRef.current && videoReady && videoRef.current.videoWidth > 0) {
@@ -139,6 +141,16 @@ export default function RegisterStudentModal() {
       });
       setFaceDetected(true);
     }
+  };
+
+  const removeCapturedFace = (indexToRemove) => {
+    setCapturedFaces((current) => {
+      const nextFaces = current.filter((_, index) => index !== indexToRemove);
+      if (!nextFaces.length) {
+        setFaceDetected(false);
+      }
+      return nextFaces;
+    });
   };
 
   const handleChange = (e) => {
@@ -248,8 +260,17 @@ export default function RegisterStudentModal() {
     };
 
     try {
-      const descriptors = await Promise.all(capturedFaces.map((face) => buildFaceDescriptor(face)));
+      const faceApiDescriptors = await Promise.all(capturedFaces.map((face) => extractFaceApiDescriptor(face)));
+      const canUseFaceApi = faceApiDescriptors.every(
+        (descriptor) => Array.isArray(descriptor) && descriptor.length === 128,
+      );
+
+      const descriptors = canUseFaceApi
+        ? faceApiDescriptors
+        : await Promise.all(capturedFaces.map((face) => buildFaceDescriptor(face)));
+
       const faceDescriptor = averageDescriptors(descriptors);
+      const faceDescriptorEngine = canUseFaceApi ? "face-api" : "custom";
 
       await createStudent({
         studentId: generatedId,
@@ -264,6 +285,7 @@ export default function RegisterStudentModal() {
         guardianPhone: formData.guardianPhone,
         guardianEmail: formData.guardianEmail,
         faceDescriptor,
+        faceDescriptorEngine,
       });
 
       setSubmitted(true);
@@ -574,12 +596,21 @@ export default function RegisterStudentModal() {
                       <p className="text-xs font-semibold text-slate-700 mb-3">RECENT SNAPSHOTS</p>
                       <div className="grid grid-cols-3 gap-3">
                         {capturedFaces.map((face, idx) => (
-                          <img
-                            key={idx}
-                            src={face}
-                            alt={`Snapshot ${idx + 1}`}
-                            className="w-full aspect-square rounded-lg object-cover border border-slate-200"
-                          />
+                          <div key={idx} className="relative">
+                            <img
+                              src={face}
+                              alt={`Snapshot ${idx + 1}`}
+                              className="w-full aspect-square rounded-lg object-cover border border-slate-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCapturedFace(idx)}
+                              aria-label={`Remove snapshot ${idx + 1}`}
+                              className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-rose-600"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         ))}
                         {Array.from({ length: 3 - capturedFaces.length }).map((_, idx) => (
                           <div
