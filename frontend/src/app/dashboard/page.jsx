@@ -307,7 +307,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {absent > 0 ? (
+      {/* {absent > 0 ? (
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div>
@@ -317,7 +317,7 @@ export default function DashboardPage() {
             </p>
           </div>
         </div>
-      ) : null}
+      ) : null} */}
 
       {/* <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-xs text-emerald-700">
         School-level attendance logic is active: no class-wise attendance is used in this dashboard.
