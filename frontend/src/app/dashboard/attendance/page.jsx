@@ -693,7 +693,7 @@ export default function TakeAttendancePage() {
               Facial Attendance
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Take Attendance</h1>
-            <p className="mt-1 text-sm text-slate-500">Real-time face scan for school check-in and biometric verification.</p>
+            {/* <p className="mt-1 text-sm text-slate-500">Real-time face scan for school check-in and biometric verification.</p> */}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -801,11 +801,11 @@ export default function TakeAttendancePage() {
                       </div>
                     )}
 
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-                      <span className="inline-flex items-center rounded-full bg-slate-200/90 px-3 py-1 text-[11px] font-semibold tracking-wide text-sky-800 shadow-sm">
-                        ANALYZING FACIAL DATA...
+                    {/* <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+                      <span className="inline-flex items-center rounded-full bg-slate-200/90 px-3 py-1 text-[10px] font-semibold tracking-wide text-sky-800 shadow-sm">
+                        Analyzing facial data...
                       </span>
-                    </div>
+                    </div> */}
                   </div>
                 </div>
 

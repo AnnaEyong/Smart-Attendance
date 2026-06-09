@@ -190,7 +190,7 @@ function statusFromAttendanceRate(rate) {
     return { status: "Excellent", tone: "excellent" };
   }
 
-  if (rate >= 85) {
+  if (rate >= 80) {
     return { status: "Good", tone: "good" };
   }
 

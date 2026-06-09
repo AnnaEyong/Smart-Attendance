@@ -214,9 +214,9 @@ export default function AppSidebar({ children }) {
                         <span className="truncate">{item.label}</span>
                       )}
 
-                      {active && (!collapsed || isMobile) && (
+                      {/* {active && (!collapsed || isMobile) && (
                         <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-500" />
-                      )}
+                      )} */}
                     </Link>
                   </li>
                 );

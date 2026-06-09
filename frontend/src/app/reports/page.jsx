@@ -8,7 +8,6 @@ import {
   ChevronRight,
   ChevronDown,
   FileText,
-  MoreVertical,
   ShieldCheck,
   Timer,
   TrendingUp,
@@ -289,12 +288,11 @@ export default function ReportsPage() {
               <thead>
                 <tr className="bg-sky-700 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-300">
                   <th className="px-4 py-3">Student Name</th>
-                  <th className="px-4 py-3">Student ID</th>
+                  <th className="px-4 py-3">Department</th>
                   <th className="px-4 py-3">Level</th>
                   <th className="px-4 py-3">Check-In</th>
                   <th className="px-4 py-3">Check-Out</th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,7 +318,7 @@ export default function ReportsPage() {
                         </Link>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-slate-500">{row.id}</td>
+                    <td className="px-4 py-4 text-slate-500">{row.department}</td>
                     <td className="px-4 py-4 text-slate-600">{row.level}</td>
                     <td className="px-4 py-4 text-slate-700">{row.checkIn}</td>
                     <td className="px-4 py-4 text-slate-700">{row.checkOut}</td>
@@ -339,11 +337,6 @@ export default function ReportsPage() {
                         />
                         {row.status}
                       </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <button className="grid cursor-pointer h-7 w-7 place-items-center rounded-full text-slate-500 hover:bg-slate-100">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
                     </td>
                   </tr>
                 ))}

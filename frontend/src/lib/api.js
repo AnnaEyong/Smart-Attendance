@@ -79,6 +79,13 @@ export function verifyAdminLoginOtp({ email, otp }) {
   });
 }
 
+export function resendAdminLoginOtp({ email }) {
+  return request("/admin/resend-login-otp", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export function requestAdminPasswordOtp({ email }) {
   return request("/admin/request-password-otp", {
     method: "POST",

@@ -36,7 +36,7 @@ const studentSchema = new mongoose.Schema(
     faceDescriptorEngine: {
       type: String,
       enum: ["custom", "face-api"],
-      default: "custom",
+      default: "face-api",
     },
   },
   { timestamps: true },

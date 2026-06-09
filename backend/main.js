@@ -4,6 +4,7 @@ const cors = require("cors");
 
 const { connect } = require("./configs/database.config");
 const Attendance = require("./src/models/Attendance");
+const Student = require("./src/models/Student");
 const studentRoute = require("./routes/student.route");
 const attendanceRoute = require("./routes/attendance.route");
 const adminRoute = require("./routes/admin.route");
@@ -25,6 +26,22 @@ const run = async () => {
 
     if (migrationResult.modifiedCount > 0) {
       console.log(`Migrated ${migrationResult.modifiedCount} attendance records to On-time status.`);
+    }
+
+    const descriptorEngineMigration = await Student.updateMany(
+      {
+        faceDescriptor: { $exists: true, $ne: null },
+        $or: [
+          { faceDescriptorEngine: { $exists: false } },
+          { faceDescriptorEngine: null },
+          { faceDescriptorEngine: "custom" },
+        ],
+      },
+      { $set: { faceDescriptorEngine: "face-api" } }
+    );
+
+    if (descriptorEngineMigration.modifiedCount > 0) {
+      console.log(`Migrated ${descriptorEngineMigration.modifiedCount} student descriptors to face-api engine.`);
     }
 
     app.use(cors());

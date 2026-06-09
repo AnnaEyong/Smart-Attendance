@@ -45,6 +45,24 @@ const adminSchema = new mongoose.Schema(
       select: false,
     },
 
+    loginOtpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+
+    loginOtpLastSentAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    loginOtpBlockedUntil: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
     isActive: {
       type: Boolean,
       default: true,

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">Smart Attendance System Architecture</title>
+  <desc id="desc">Simplified architecture diagram showing admin user, frontend, backend, database, SMTP, and face recognition flow.</desc>
+
+  <defs>
+    <style>
+      .title { font: 700 32px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 20px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .small { font: 500 15px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .box { fill: #ffffff; stroke: #0f172a; stroke-width: 2; rx: 16; ry: 16; }
+      .soft { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 16; ry: 16; }
+      .arrow { stroke: #0f172a; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead); }
+      .bg { fill: #f1f5f9; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#0f172a" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="760" />
+
+  <text class="title" x="640" y="56" text-anchor="middle">Smart Attendance System Architecture</text>
+
+  <rect class="box" x="80" y="300" width="230" height="120" />
+  <text class="label" x="195" y="352" text-anchor="middle">Admin User</text>
+  <text class="small" x="195" y="378" text-anchor="middle">Browser / Operator</text>
+
+  <rect class="box" x="370" y="250" width="280" height="220" />
+  <text class="label" x="510" y="302" text-anchor="middle">Next.js Frontend</text>
+  <text class="small" x="510" y="332" text-anchor="middle">Login + OTP UI</text>
+  <text class="small" x="510" y="356" text-anchor="middle">Attendance Scanner</text>
+  <text class="small" x="510" y="380" text-anchor="middle">Students + Reports</text>
+
+  <rect class="box" x="730" y="250" width="300" height="220" />
+  <text class="label" x="880" y="302" text-anchor="middle">Express Backend API</text>
+  <text class="small" x="880" y="332" text-anchor="middle">Auth + OTP Logic</text>
+  <text class="small" x="880" y="356" text-anchor="middle">Student / Attendance APIs</text>
+  <text class="small" x="880" y="380" text-anchor="middle">Validation + Middleware</text>
+
+  <rect class="soft" x="1080" y="120" width="160" height="120" />
+  <text class="label" x="1160" y="168" text-anchor="middle">SMTP</text>
+  <text class="small" x="1160" y="194" text-anchor="middle">OTP Email</text>
+
+  <rect class="soft" x="1080" y="500" width="160" height="120" />
+  <text class="label" x="1160" y="548" text-anchor="middle">MongoDB</text>
+  <text class="small" x="1160" y="574" text-anchor="middle">Admins</text>
+  <text class="small" x="1160" y="596" text-anchor="middle">Students, Attendance</text>
+
+  <rect class="soft" x="370" y="520" width="280" height="120" />
+  <text class="label" x="510" y="566" text-anchor="middle">Face Recognition</text>
+  <text class="small" x="510" y="592" text-anchor="middle">face-api Descriptor Flow</text>
+
+  <path class="arrow" d="M 310 360 L 370 360" />
+  <path class="arrow" d="M 650 360 L 730 360" />
+  <path class="arrow" d="M 1030 300 L 1080 220" />
+  <path class="arrow" d="M 1030 420 L 1080 540" />
+  <path class="arrow" d="M 510 470 L 510 520" />
+  <path class="arrow" d="M 650 580 L 760 430" />
+
+  <text class="small" x="340" y="344">HTTPS</text>
+  <text class="small" x="685" y="344">REST API</text>
+  <text class="small" x="1048" y="266">send OTP</text>
+  <text class="small" x="1048" y="498">read/write</text>
+  <text class="small" x="532" y="504">extract</text>
+  <text class="small" x="670" y="510">match + save attendance</text>
+</svg>

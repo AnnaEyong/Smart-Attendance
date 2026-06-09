@@ -12,7 +12,6 @@ import {
   Pencil,
   Mail,
   Phone,
-  RotateCcw,
   ShieldCheck,
   UserRound,
 } from "lucide-react";
@@ -73,13 +72,19 @@ function buildMonthMap(monthRowsByDate, selectedMonthDate, todayDateKey) {
       continue;
     }
 
+    const row = monthRowsByDate[dayDateKey];
+
+    if (row?.status) {
+      map[day] = String(row.status).toLowerCase();
+      continue;
+    }
+
     if (isWeekendDate(currentDate)) {
       map[day] = "neutral";
       continue;
     }
 
-    const row = monthRowsByDate[dayDateKey];
-    map[day] = row?.status ? String(row.status).toLowerCase() : "absent";
+    map[day] = "absent";
   }
 
   return map;
@@ -92,6 +97,40 @@ function initials(name) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function formatRelativeLastUpdated(timestamp) {
+  if (!timestamp) {
+    return "Last updated unavailable";
+  }
+
+  const parsedDate = new Date(timestamp);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "Last updated unavailable";
+  }
+
+  const now = Date.now();
+  const diffMs = Math.max(0, now - parsedDate.getTime());
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (diffMs < minuteMs) {
+    return "Updated just now";
+  }
+
+  if (diffMs < hourMs) {
+    const minutes = Math.floor(diffMs / minuteMs);
+    return `Updated ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffMs < dayMs) {
+    const hours = Math.floor(diffMs / hourMs);
+    return `Updated ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+
+  const days = Math.floor(diffMs / dayMs);
+  return `Updated ${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 export default function StudentDetailPage() {
@@ -460,6 +499,7 @@ export default function StudentDetailPage() {
   const guardianName = student.guardianName || "Not provided";
   const guardianPhone = student.guardianPhone || "Not provided";
   const guardianEmail = student.guardianEmail || "Not provided";
+  const lastUpdatedLabel = formatRelativeLastUpdated(student.updatedAt || student.createdAt);
 
   return (
     <div className="min-h-full bg-slate-50 p-4 md:p-6 lg:p-8">
@@ -492,11 +532,12 @@ export default function StudentDetailPage() {
                       className="h-20 w-20 rounded-full object-cover ring-4 ring-white shadow-sm"
                     />
                   ) : (
-                    <div className="grid h-20 w-20 place-items-center rounded-full bg-linear-to-br from-slate-200 via-sky-100 to-slate-400 text-2xl font-semibold text-slate-700 ring-4 ring-white shadow-sm">
+                    <div className="grid h-20 w-20 place-items-center rounded-full bg-gray-300 text-2xl font-semibold text-slate-700 ring-4 ring-white shadow-sm">
                       {avatar}
                     </div>
+                    //  bg-linear-to-br from-slate-200 via-sky-100 to-slate-400
                   )}
-                  <label className="absolute bottom-1 right-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full bg-sky-700 text-white ring-3 ring-white transition hover:bg-sky-600">
+                  <label className="absolute bottom-1 right-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full bg-sky-600 text-white ring-3 ring-white transition hover:bg-sky-600">
                     <Pencil className="h-3 w-3" />
                     <input
                       type="file"
@@ -781,7 +822,8 @@ export default function StudentDetailPage() {
               </div>
 
               <div className="mt-2 grid gap-4 rounded-full bg-slate-50 p-4 md:grid-cols-[100px_minmax(0,1fr)_180px]">
-                <div className="grid h-24 w-full rounded-full place-items-center bg-linear-to-br from-slate-700 via-sky-900 to-slate-950 text-lg font-semibold text-white">
+                <div className="grid h-24 w-full rounded-full place-items-center bg-gray-300 text-lg font-semibold text-white">
+                  {/* bg-linear-to-br from-slate-700 via-sky-900 to-slate-950 */}
                   {profileImage ? (
                     <img
                       src={profileImage}
@@ -789,7 +831,7 @@ export default function StudentDetailPage() {
                       className="h-full w-full rounded-full object-cover  shadow-sm"
                     />
                   ) : (
-                    <div className="grid place-items-center rounded-full bg-transparent text-2xl font-semibold text-white shadow-sm">
+                    <div className="grid place-items-center rounded-full bg-transparent text-2xl font-semibold text-sky-700">
                       {avatar}
                     </div>
                   )}
@@ -834,13 +876,9 @@ export default function StudentDetailPage() {
                     </>
                   ) : (
                     <>
-                      <button
-                        onClick={loadStudentDetail}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        Refresh
-                      </button>
+                      <div className="inline-flex items-center justify-center rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700">
+                        {lastUpdatedLabel}
+                      </div>
                       <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
                         <Download className="h-4 w-4" />
                         Export Report

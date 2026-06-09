@@ -19,6 +19,10 @@ const adminVerifyLoginOtpSchema = z.object({
   otp: z.string().regex(/^\d{6}$/),
 });
 
+const adminResendLoginOtpSchema = z.object({
+  email: z.string().email(),
+});
+
 const adminRequestOtpSchema = z.object({
   email: z.string().email(),
 });
@@ -56,6 +60,15 @@ const adminVerifyLoginOtpValidation = (req, res, next) => {
   return next();
 };
 
+const adminResendLoginOtpValidation = (req, res, next) => {
+  const result = Validation(adminResendLoginOtpSchema, req.body);
+  if (!result.isValid) {
+    return res.status(400).json(result.error);
+  }
+
+  return next();
+};
+
 const adminRequestOtpValidation = (req, res, next) => {
   const result = Validation(adminRequestOtpSchema, req.body);
   if (!result.isValid) {
@@ -78,6 +91,7 @@ module.exports = {
   adminCreateValidation,
   adminLoginValidation,
   adminVerifyLoginOtpValidation,
+  adminResendLoginOtpValidation,
   adminRequestOtpValidation,
   adminResetPasswordWithOtpValidation,
 };
