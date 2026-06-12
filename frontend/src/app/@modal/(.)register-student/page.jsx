@@ -26,6 +26,7 @@ export default function RegisterStudentModal() {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // New state to track loading
   const [submitError, setSubmitError] = useState("");
   const [departments, setDepartments] = useState([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
@@ -97,7 +98,6 @@ export default function RegisterStudentModal() {
           },
         });
       } catch {
-        // Fallback for devices/browsers that reject facingMode constraints.
         stream = await navigator.mediaDevices.getUserMedia({ video: true });
       }
 
@@ -132,7 +132,6 @@ export default function RegisterStudentModal() {
       const imageData = canvasRef.current.toDataURL("image/jpeg");
       setCapturedFaces([...capturedFaces, imageData]);
       
-      // Simulate face detection checklist
       setRequirements({
         centered: Math.random() > 0.3,
         lighting: Math.random() > 0.2,
@@ -251,6 +250,8 @@ export default function RegisterStudentModal() {
       return;
     }
 
+    setIsSubmitting(true); // Start layout loading wheel / spinner text
+
     const generatedId = `ST-${Date.now().toString().slice(-6)}`;
     const levelMap = {
       9: "Level 100",
@@ -310,10 +311,13 @@ export default function RegisterStudentModal() {
       }, 1200);
     } catch (error) {
       setSubmitError(error.message || "Unable to register student");
+    } finally {
+      setIsSubmitting(false); // Reset loading state if error happens
     }
   };
 
   const handleClose = () => {
+    if (isSubmitting) return; // Prevent closing while API requests are active
     setCameraActive(false);
     router.back();
   };
@@ -323,10 +327,12 @@ export default function RegisterStudentModal() {
       <div className="relative w-full max-w-2xl max-h-[90vh] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col">
         <button
           onClick={handleClose}
-          className="absolute right-4 top-4 z-10 inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 transition hover:bg-slate-50"
+          disabled={isSubmitting}
+          className="absolute right-4 top-4 z-10 inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X className="h-4 w-4" />
         </button>
+        
         {/* Form */}
         <div className="overflow-y-auto flex-1 p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -347,9 +353,10 @@ export default function RegisterStudentModal() {
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
                     placeholder="Enter first name"
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   />
                 </div>
                 <div>
@@ -359,9 +366,10 @@ export default function RegisterStudentModal() {
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
                     placeholder="Enter last name"
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -374,8 +382,9 @@ export default function RegisterStudentModal() {
                     name="dateOfBirth"
                     value={formData.dateOfBirth}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   />
                 </div>
                 <div>
@@ -385,9 +394,10 @@ export default function RegisterStudentModal() {
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
                     placeholder="student@example.com"
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -399,8 +409,9 @@ export default function RegisterStudentModal() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   placeholder="+1 (555) 000-0000"
-                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                 />
               </div>
             </div>
@@ -416,8 +427,9 @@ export default function RegisterStudentModal() {
                     name="grade"
                     value={formData.grade}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   >
                     <option value="">Select level</option>
                     <option value="9">Level 100</option>
@@ -432,8 +444,9 @@ export default function RegisterStudentModal() {
                     name="department"
                     value={formData.department}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   >
                     <option value="">{departmentsLoading ? "Loading departments..." : "Select department"}</option>
                     {departments.map((department) => (
@@ -458,9 +471,10 @@ export default function RegisterStudentModal() {
                     name="guardianName"
                     value={formData.guardianName}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
                     placeholder="Enter guardian name"
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   />
                 </div>
                 <div>
@@ -470,9 +484,10 @@ export default function RegisterStudentModal() {
                     name="guardianPhone"
                     value={formData.guardianPhone}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     required
                     placeholder="+1 (555) 000-0000"
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -484,9 +499,10 @@ export default function RegisterStudentModal() {
                   name="guardianEmail"
                   value={formData.guardianEmail}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   required
                   placeholder="guardian@example.com"
-                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 disabled:opacity-60"
                 />
               </div>
             </div>
@@ -510,7 +526,8 @@ export default function RegisterStudentModal() {
                   <button
                     type="button"
                     onClick={() => setCameraActive(true)}
-                    className="w-full rounded-lg border-2 border-dashed border-slate-300 py-8 text-center transition hover:border-slate-400"
+                    disabled={isSubmitting}
+                    className="w-full rounded-lg border-2 border-dashed border-slate-300 py-8 text-center transition hover:border-slate-400 disabled:opacity-50"
                   >
                     <Camera className="mx-auto mb-2 h-6 w-6 text-slate-400" />
                     <p className="text-sm font-semibold text-slate-700">Click to enable camera</p>
@@ -523,7 +540,6 @@ export default function RegisterStudentModal() {
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
-                    {/* Camera Feed - Left Side */}
                     <div className="col-span-2">
                       <div className="relative rounded-2xl overflow-hidden bg-black aspect-square">
                         <video
@@ -535,7 +551,6 @@ export default function RegisterStudentModal() {
                         />
                         <canvas ref={canvasRef} className="hidden" />
                         
-                        {/* Face detection overlay */}
                         <div className="absolute inset-0 flex items-center justify-center border-4 border-dashed border-amber-500/50">
                           <div className="text-center">
                             {!videoReady ? (
@@ -558,7 +573,6 @@ export default function RegisterStudentModal() {
                       </div>
                     </div>
 
-                    {/* Requirements Checklist - Right Side */}
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between">
                       <div>
                         <p className="text-xs font-semibold text-slate-700 mb-3">REQUIREMENTS</p>
@@ -581,7 +595,7 @@ export default function RegisterStudentModal() {
                       <button
                         type="button"
                         onClick={captureFace}
-                        disabled={capturedFaces.length >= 3 || !videoReady}
+                        disabled={capturedFaces.length >= 3 || !videoReady || isSubmitting}
                         className="mt-4 w-full inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Camera className="h-3.5 w-3.5" />
@@ -590,7 +604,6 @@ export default function RegisterStudentModal() {
                     </div>
                   </div>
 
-                  {/* Recent Snapshots */}
                   {capturedFaces.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-slate-700 mb-3">RECENT SNAPSHOTS</p>
@@ -605,8 +618,9 @@ export default function RegisterStudentModal() {
                             <button
                               type="button"
                               onClick={() => removeCapturedFace(idx)}
+                              disabled={isSubmitting}
                               aria-label={`Remove snapshot ${idx + 1}`}
-                              className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-rose-600"
+                              className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-rose-600 disabled:opacity-50"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -653,16 +667,18 @@ export default function RegisterStudentModal() {
                 <button
                   type="button"
                   onClick={handleClose}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  disabled={isSubmitting}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-600"
+                  disabled={isSubmitting}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:bg-sky-600/70 disabled:cursor-not-allowed"
                 >
                   <Shield className="h-4 w-4" />
-                  Register Student
+                  {isSubmitting ? "Registering Student..." : "Register Student"}
                 </button>
               </div>
             )}

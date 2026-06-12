@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Clock, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { AlertCircle, Clock, Plus, ShieldCheck, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { fetchDailyAttendance, fetchStudents } from "@/lib/api";
 
 function todayLabel() {
@@ -217,30 +217,44 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-800">Daily Status</h2>
-              <p className="text-xs text-slate-400">Live summary from attendance records</p>
-            </div>
-            <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-              Live
-            </span>
+        {/* FIXED: Replaced "Daily Status" with the Interactive Quick Action & Registration Panel */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs lg:col-span-2 flex flex-col justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">Quick Actions</h2>
+            <p className="text-xs text-slate-400">Administrative entry points</p>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {[
-              { title: "On-time", value: onTime, tone: "text-emerald-700" },
-              { title: "Marked late", value: late, tone: "text-amber-700" },
-              { title: "Marked absent", value: absent, tone: "text-rose-700" },
-              // { title: "Total students", value: totalStudents, tone: "text-slate-700" },
-            ].map((item) => (
-              <div key={item.title} className="rounded-xl flex justify-between border border-slate-100 bg-slate-50 p-3">
-                <p className="text-xs text-slate-500">{item.title}</p>
-                <p className={`mt-1 text-lg font-semibold ${item.tone}`}>{item.value}</p>
+          <div className="mt-4 space-y-3 flex-1 flex flex-col justify-center">
+            <Link
+              href="/students"
+              className="flex w-full items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-3.5 text-left transition hover:bg-slate-100/70 group"
+            >
+              <div>
+                <p className="text-xs font-semibold text-slate-800">Register New Student</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Provision profile datasets and setup face assets</p>
               </div>
-            ))}
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-white border border-slate-200 text-slate-700 shadow-2xs group-hover:bg-sky-600 group-hover:text-white group-hover:border-transparent transition">
+                <Plus className="h-4 w-4" />
+              </span>
+            </Link>
+
+            <Link
+              href="/students"
+              className="flex w-full items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-3.5 text-left transition hover:bg-slate-100/70 group"
+            >
+              <div>
+                <p className="text-xs font-semibold text-slate-800">System Parameters Override</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Manually record status exceptions or lock check-ins</p>
+              </div>
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-white border border-slate-200 text-slate-700 shadow-2xs group-hover:bg-amber-600 group-hover:text-white group-hover:border-transparent transition">
+                <Clock className="h-4 w-4" />
+              </span>
+            </Link>
+
+            <div className="flex items-center gap-2 mt-2 rounded-xl bg-sky-50/40 border border-sky-100 px-3 py-2.5 text-[11px] text-sky-800">
+              <ShieldCheck className="h-4 w-4 text-sky-600 shrink-0" />
+              <span>Admin secure checkpoint validation strategy is fully active.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -306,22 +320,6 @@ export default function DashboardPage() {
           <span>Showing {recentActivity.length} of {report.rows?.length || 0} records</span>
         </div>
       </div>
-
-      {/* {absent > 0 ? (
-        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div>
-            <p className="text-sm font-medium text-amber-800">Absence alert for today</p>
-            <p className="mt-0.5 text-xs text-amber-600">
-              {absent} student{absent === 1 ? "" : "s"} did not check in and are currently marked absent.
-            </p>
-          </div>
-        </div>
-      ) : null} */}
-
-      {/* <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-xs text-emerald-700">
-        School-level attendance logic is active: no class-wise attendance is used in this dashboard.
-      </div> */}
     </div>
   );
 }

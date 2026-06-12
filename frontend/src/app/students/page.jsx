@@ -5,11 +5,8 @@ import {
   CalendarDays,
   ChevronDown,
   Download,
-  Filter,
   MoreVertical,
   Search,
-  ShieldCheck,
-  Sparkles,
   TrendingUp,
   UserRound,
   Users,
@@ -18,106 +15,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { deleteStudent, fetchStudentMonthlyAttendance, fetchStudents } from "@/lib/api";
-
-const students = [
-  {
-    name: "Julianna Smith",
-    id: "#ST-2041",
-    grade: "12th Grade",
-    section: "B",
-    attendance: 98,
-    absences: 1,
-    status: "Excellent",
-    tone: "excellent",
-    avatar: "JS",
-  },
-  {
-    name: "Marcus Rodriguez",
-    id: "#ST-2052",
-    grade: "11th Grade",
-    section: "A",
-    attendance: 91,
-    absences: 3,
-    status: "Good",
-    tone: "good",
-    avatar: "MR",
-  },
-  {
-    name: "Sophia Chen",
-    id: "#ST-2118",
-    grade: "12th Grade",
-    section: "B",
-    attendance: 74,
-    absences: 9,
-    status: "Warning",
-    tone: "warning",
-    avatar: "SC",
-  },
-  {
-    name: "Ethan Brooks",
-    id: "#ST-2029",
-    grade: "10th Grade",
-    section: "C",
-    attendance: 96,
-    absences: 2,
-    status: "Excellent",
-    tone: "excellent",
-    avatar: "EB",
-  },
-  {
-    name: "Amina Hassan",
-    id: "#ST-2098",
-    grade: "9th Grade",
-    section: "A",
-    attendance: 88,
-    absences: 5,
-    status: "Good",
-    tone: "good",
-    avatar: "AH",
-  },
-  {
-    name: "Noah Mensah",
-    id: "#ST-2134",
-    grade: "11th Grade",
-    section: "C",
-    attendance: 69,
-    absences: 11,
-    status: "Needs Support",
-    tone: "risk",
-    avatar: "NM",
-  },
-];
-
-const stats = [
-  {
-    label: "Total Students",
-    value: "1,284",
-    delta: "+24 this month",
-    icon: Users,
-    tone: "slate",
-  },
-  {
-    label: "Active Enrollment",
-    value: "1,196",
-    delta: "93.2% enrolled",
-    icon: UserCheck,
-    tone: "emerald",
-  },
-  {
-    label: "Attendance Alerts",
-    value: "38",
-    delta: "Needs review",
-    icon: UserX,
-    tone: "amber",
-  },
-  {
-    label: "Average Attendance",
-    value: "94.1%",
-    delta: "+1.8% vs last term",
-    icon: TrendingUp,
-    tone: "sky",
-  },
-];
 
 const activity = [
   { name: "Julianna Smith", action: "Updated guardian contact", time: "10 min ago" },
@@ -203,7 +100,8 @@ function statusFromAttendanceRate(rate) {
 
 export default function StudentsPage() {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("All Students");
+  const [statusFilter, setStatusFilter] = useState("All Statuses");
+  const [levelFilter, setLevelFilter] = useState("All Levels");
   const [backendStudents, setBackendStudents] = useState([]);
   const [attendanceByStudent, setAttendanceByStudent] = useState({});
   const [openActionId, setOpenActionId] = useState("");
@@ -328,6 +226,62 @@ export default function StudentsPage() {
     });
   }, [backendStudents, attendanceByStudent]);
 
+  // Real-time calculation system 
+  const computedStats = useMemo(() => {
+    const total = studentRows.length;
+    
+    let totalAttendancePercentageSum = 0;
+    let criticalAlertsCount = 0;
+    let onTrackCount = 0;
+
+    studentRows.forEach((s) => {
+      totalAttendancePercentageSum += s.attendance;
+      
+      if (s.tone === "warning" || s.tone === "risk") {
+        criticalAlertsCount += 1;
+      }
+      if (s.tone === "excellent" || s.tone === "good") {
+        onTrackCount += 1;
+      }
+    });
+
+    const averageAttendance = total > 0 ? Math.round(totalAttendancePercentageSum / total) : 0;
+    const onTrackPercentage = total > 0 ? Math.round((onTrackCount / total) * 100) : 0;
+    const alertsPercentage = total > 0 ? Math.round((criticalAlertsCount / total) * 100) : 0;
+
+    return [
+      {
+        label: "Total Students",
+        value: String(total),
+        delta: "Total enrollment",
+        icon: Users,
+        tone: "slate",
+      },
+      {
+        label: "Students On Track",
+        value: String(onTrackCount),
+        delta: `${onTrackPercentage}% of total roster`,
+        icon: UserCheck,
+        tone: "emerald",
+      },
+      {
+        label: "Attendance Alerts",
+        value: String(criticalAlertsCount),
+        delta: `${alertsPercentage}% of total roster`,
+        icon: UserX,
+        tone: "amber",
+      },
+      {
+        label: "Average Attendance",
+        value: `${averageAttendance}%`,
+        delta: "Monthly dynamic average",
+        icon: TrendingUp,
+        tone: "sky",
+      },
+    ];
+  }, [studentRows]);
+
+  // Combined Multi-Filter Algorithm
   const filteredStudents = useMemo(() => {
     return studentRows.filter((student) => {
       const matchesQuery =
@@ -335,11 +289,19 @@ export default function StudentsPage() {
         student.name.toLowerCase().includes(query.toLowerCase()) ||
         student.id.toLowerCase().includes(query.toLowerCase()) ||
         student.level.toLowerCase().includes(query.toLowerCase());
-      const matchesFilter =
-        filter === "All Students" || student.status.toLowerCase() === filter.toLowerCase();
-      return matchesQuery && matchesFilter;
+        
+      const matchesStatus =
+        statusFilter === "All Statuses" || 
+        student.status.toLowerCase() === statusFilter.toLowerCase();
+
+      const matchesLevel =
+        levelFilter === "All Levels" ||
+        student.level.toLowerCase() === levelFilter.toLowerCase() ||
+        `level ${student.level}`.toLowerCase() === levelFilter.toLowerCase();
+
+      return matchesQuery && matchesStatus && matchesLevel;
     });
-  }, [filter, query, studentRows]);
+  }, [statusFilter, levelFilter, query, studentRows]);
 
   const activityWithRoute = useMemo(() => {
     return activity.map((item) => {
@@ -360,7 +322,6 @@ export default function StudentsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700 shadow-xs">
-              {/* <Sparkles className="h-3.5 w-3.5" /> */}
               Student Management
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
@@ -383,8 +344,9 @@ export default function StudentsPage() {
           </div>
         </div>
 
+        {/* Real-time Dynamic Cards Grid */}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {stats.map((card) => {
+          {computedStats.map((card) => {
             const Icon = card.icon;
             const accentClass =
               card.tone === "emerald"
@@ -436,38 +398,61 @@ export default function StudentsPage() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-[1.3fr_0.9fr_0.9fr_0.9fr_auto]">
-              <div className="relative xl:col-span-2">
+            {/* Proportional Layout Toolbelt (Search and Selects stretch out; Clear button stays compact) */}
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              {/* Search Field takes up more relative weight */}
+              <div className="relative flex-1 sm:flex-[1.5]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search student name, ID, or level"
+                  placeholder="Search name or ID..."
                   className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
                 />
               </div>
 
-              <button className="flex cursor-pointer h-11 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700">
-                <span className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-slate-400" />
-                  {filter}
-                </span>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button>
+              {/* Status Dropdown */}
+              <div className="relative flex h-11 flex-1 items-center rounded-lg border border-slate-200 bg-white px-3">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full bg-transparent text-sm text-slate-700 outline-none cursor-pointer appearance-none pr-8"
+                >
+                  <option value="All Statuses">All Statuses</option>
+                  <option value="Excellent">Excellent</option>
+                  <option value="Good">Good</option>
+                  <option value="Warning">Warning</option>
+                  <option value="Needs Support">Needs Support</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-slate-400" />
+              </div>
 
-              {/* <button className="flex cursor-pointer h-11 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700">
-                <span className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-slate-400" />
-                  Sections
-                </span>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button> */}
+              {/* Level Dropdown */}
+              <div className="relative flex h-11 flex-1 items-center rounded-lg border border-slate-200 bg-white px-3">
+                <select
+                  value={levelFilter}
+                  onChange={(e) => setLevelFilter(e.target.value)}
+                  className="w-full bg-transparent text-sm text-slate-700 outline-none cursor-pointer appearance-none pr-8"
+                >
+                  <option value="All Levels">All Levels</option>
+                  <option value="Level 100">Level 100</option>
+                  <option value="Level 200">Level 200</option>
+                  <option value="Level 300">Level 300</option>
+                  <option value="Level 400">Level 400</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-slate-400" />
+              </div>
 
+              {/* Compact Clear Button */}
               <button
-                onClick={() => setFilter((current) => (current === "All Students" ? "Excellent" : "All Students"))}
-                className="h-11 cursor-pointer rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-500"
+                onClick={() => {
+                  setQuery("");
+                  setStatusFilter("All Statuses");
+                  setLevelFilter("All Levels");
+                }}
+                className="h-11 shrink-0 cursor-pointer rounded-lg border border-sky-500 bg-sky-700 px-4 text-sm font-semibold text-slate-300 transition hover:bg-sky-600"
               >
-                Apply
+                Clear
               </button>
             </div>
 
@@ -480,8 +465,6 @@ export default function StudentsPage() {
                   <thead>
                     <tr className="bg-sky-700 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-300">
                       <th className="pl-4 w-[200px] py-3">Student</th>
-                      {/* <th className="px-4 py-3">ID</th> */}
-                      {/* <th className="px-4 py-3">Level</th> */}
                       <th className=" py-3">Attendance</th>
                       <th className=" py-3">Absences</th>
                       <th className=" py-3">Status</th>
@@ -489,7 +472,7 @@ export default function StudentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                      {filteredStudents.map((student) => (
+                    {filteredStudents.map((student) => (
                       <tr key={student.id} className="border-b border-dashed border-sky-100 text-sm last:border-b-0">
                         <td className="pl-4 w-[200px] py-4">
                           <div className="flex items-center gap-3">
@@ -512,8 +495,6 @@ export default function StudentsPage() {
                             </div>
                           </div>
                         </td>
-                        {/* <td className="px-4 py-4 text-slate-500">{student.id}</td> */}
-                        {/* <td className="px-4 py-4 text-slate-600">{student.level}</td> */}
                         <td className="  py-4 w-[100px] text-slate-700">{student.attendance}%</td>
                         <td className=" py-4 w-[90px] text-slate-700">{student.absences}</td>
                         <td className="  w-[150px] py-4">

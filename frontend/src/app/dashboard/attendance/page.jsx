@@ -731,7 +731,7 @@ export default function TakeAttendancePage() {
               <button
                 type="button"
                 onClick={() => setAttendanceMode("check-in")}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                className={`rounded-lg px-4 py-2 cursor-pointer text-sm font-semibold transition ${
                   attendanceMode === "check-in"
                     ? "bg-sky-700 text-white"
                     : "text-slate-600 hover:bg-white"
@@ -742,7 +742,7 @@ export default function TakeAttendancePage() {
               <button
                 type="button"
                 onClick={() => setAttendanceMode("check-out")}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                className={`rounded-lg px-4 py-2 cursor-pointer text-sm font-semibold transition ${
                   attendanceMode === "check-out"
                     ? "bg-sky-700 text-white"
                     : "text-slate-600 hover:bg-white"

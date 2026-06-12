@@ -12,7 +12,8 @@ import {
   Timer,
   TrendingUp,
 } from "lucide-react";
-import { fetchDailyAttendance, fetchDepartments, fetchStudents } from "@/lib/api";
+import { fetchDailyAttendance, fetchDepartments, fetchStudents, updateAttendanceStatus } from "@/lib/api";
+
 
 const summaryCards = (summary, registeredTotal, reportTotal) => {
   const onTimeCount = summary.onTime || 0;
@@ -51,12 +52,14 @@ const toneStyles = {
   "on-time": "bg-emerald-100 text-emerald-700",
   late: "bg-amber-100 text-amber-700",
   absent: "bg-rose-100 text-rose-700",
+  excused: "bg-blue-100 text-blue-700",
 };
 
 const statusDotStyles = {
   "On-time": "bg-emerald-500",
   Late: "bg-amber-500",
   Absent: "bg-rose-500",
+  Excused: "bg-blue-500",
 };
 
 function initials(name) {
@@ -87,6 +90,8 @@ export default function ReportsPage() {
   const [summary, setSummary] = useState({ onTime: 0, absent: 0, late: 0 });
   const [registeredTotal, setRegisteredTotal] = useState(0);
   const [allDepartments, setAllDepartments] = useState([]);
+  // const [editingRow, setEditingRow] = useState(null);
+  // const [updating, setUpdating] = useState(false); 
 
   useEffect(() => {
     const loadReport = async () => {
@@ -103,7 +108,7 @@ export default function ReportsPage() {
         const totalRegistered = registeredStudents.length;
         setRegisteredTotal(totalRegistered);
         const backendRows = Array.isArray(attendanceResponse?.data?.rows) ? attendanceResponse.data.rows : [];
-        const attendedRows = backendRows.filter((row) => Boolean(row.checkInTime));
+        const attendedRows = backendRows.filter((row) => Boolean(row.checkInTime) || row.status === "Excused");
 
         const attendedSummary = attendedRows.reduce(
           (acc, row) => {
@@ -121,6 +126,7 @@ export default function ReportsPage() {
 
         setRows(
           attendedRows.map((row) => ({
+            attendanceId: row._id,
             name: row.studentName,
             routeId: row.studentId,
             profileImage: row.profileImage || "",
@@ -257,6 +263,7 @@ export default function ReportsPage() {
                   "All Status",
                   "On-time",
                   "Late",
+                  "Excused",
                 ].map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -293,6 +300,7 @@ export default function ReportsPage() {
                   <th className="px-4 py-3">Check-In</th>
                   <th className="px-4 py-3">Check-Out</th>
                   <th className="px-4 py-3">Status</th>
+                  {/* <th className="px-4 py-3">Actions</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -332,6 +340,8 @@ export default function ReportsPage() {
                               ? "bg-emerald-500"
                               : row.tone === "late"
                                 ? "bg-amber-500"
+                              : row.tone === "excused"
+                                ? "bg-blue-500"
                                 : "bg-rose-500"
                           }`}
                         />

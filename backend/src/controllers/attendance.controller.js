@@ -270,14 +270,15 @@ const monthly = async (req, res) => {
     },
   }).sort({ date: 1 });
 
-  const rows = records.map((record) => ({
-    date: record.date,
-    studentId: student.studentId,
-    checkInTime: record.checkInTime,
-    checkOutTime: record.checkOutTime,
-    status: record.status,
-    isLate: record.isLate,
-  }));
+const rows = records.map((record) => ({
+  date: record.date,
+  studentId: student.studentId,
+  checkInTime: record.checkInTime,
+  checkOutTime: record.checkOutTime,
+  status: record.status,
+  absenceReason: record.absenceReason,
+  isLate: record.isLate,
+}));
 
   return res.status(200).json({
     message: "Monthly report fetched successfully!!!",
@@ -289,9 +290,67 @@ const monthly = async (req, res) => {
   });
 };
 
+const updateAttendanceStatus = async (req, res) => {
+  const { attendanceId } = req.params;
+  const { status } = req.body;
+
+  const attendance = await Attendance.findById(attendanceId);
+
+  if (!attendance) {
+    return res.status(404).json({
+      success: false,
+      message: "Attendance record not found",
+    });
+  }
+
+  attendance.status = status;
+
+  attendance.isLate = status === "Late";
+
+  await attendance.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "Attendance updated successfully",
+    data: attendance,
+  });
+};
+
+const excuseAttendance = async (req, res) => {
+  const { studentId, date, absenceReason } = req.body;
+
+  try {
+    // 1. Find the student to get their unique ObjectId (_id)
+    const student = await Student.findOne({ studentId }); // Assuming your Student model has a studentId string field
+    
+    if (!student) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    // 2. Use the student's _id (the ObjectId) for the attendance record
+    const attendance = await Attendance.findOneAndUpdate(
+      { studentId: student._id, date: date }, // Match using the ObjectId
+      { 
+        status: "Excused", 
+        absenceReason: absenceReason,
+        excusedAt: new Date()
+      },
+      { new: true, upsert: true }
+    );
+
+    return res.status(200).json({ success: true, data: attendance });
+    
+  } catch (error) {
+    console.error("FULL CONTROLLER ERROR:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   checkIn,
   checkOut,
   daily,
   monthly,
+  updateAttendanceStatus,
+  excuseAttendance
 };

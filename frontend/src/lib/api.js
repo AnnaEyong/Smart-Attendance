@@ -4,6 +4,7 @@ const TOKEN_COOKIE_KEY = "smart_attendance_admin_token";
 
 async function request(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
+  console.log("Fetching:", url, options);
   const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
@@ -19,11 +20,16 @@ async function request(path, options = {}) {
     payload = null;
   }
 
+  // if (response.status === 204) return null; // No Content success
+  // const data = await response.json().catch(() => ({}));
+
   if (!response.ok) {
-    const validationMessage = Array.isArray(payload?.path) && payload.path.length > 0
-      ? payload.path[0]?.message
-      : null;
-    throw new Error(validationMessage || payload?.message || "Request failed");
+    // const validationMessage = Array.isArray(payload?.path) && payload.path.length > 0
+    //   ? payload.path[0]?.message
+    //   : null;
+    // throw new Error(validationMessage || payload?.message || "Request failed");
+    // Add this:
+  throw new Error(payload?.message || "Request failed");
   }
 
   return payload;
@@ -146,8 +152,24 @@ export function checkOutStudent(payload) {
   });
 }
 
+export function markAttendanceExcused(payload) {
+  return request("/attendance/excuse", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchDailyAttendance(dateKey) {
   return request(`/attendance/daily?date=${encodeURIComponent(dateKey)}`);
+}
+
+export function updateAttendanceStatus(attendanceId, status) {
+  return request(`/attendance/${attendanceId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status,
+    }),
+  });
 }
 
 export function fetchStudentMonthlyAttendance(studentId, monthKey) {
@@ -166,4 +188,10 @@ export function fetchAdminProfile() {
   });
 }
 
+// export async function updateAttendanceStatus(attendanceId, status) {
+//   return request(`/attendance/${attendanceId}/status`, {
+//     method: "PATCH",
+//     body: JSON.stringify({ status }),
+//   });
+// }
 export { API_BASE_URL };

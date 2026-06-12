@@ -20,6 +20,8 @@ import {
   fetchDepartments,
   fetchStudentById,
   fetchStudentMonthlyAttendance,
+  markAttendanceExcused,
+  updateAttendanceStatus,
   updateStudent,
 } from "@/lib/api";
 import StudentDetailSkeleton from "@/components/StudentDetailSkeleton";
@@ -28,6 +30,7 @@ const dayStyles = {
   "on-time": "bg-emerald-100 text-emerald-900",
   absent: "bg-rose-100 text-rose-900",
   late: "bg-amber-100 text-amber-900",
+  excused: "bg-blue-100 text-blue-900",
   neutral: "bg-slate-100 text-slate-400",
 };
 
@@ -35,6 +38,7 @@ const statusTextStyles = {
   "on-time": "text-emerald-600",
   absent: "text-rose-600",
   late: "text-amber-600",
+  excused: "text-blue-600",
   neutral: "text-slate-600",
 };
 
@@ -42,6 +46,7 @@ const statusBadgeStyles = {
   "on-time": "bg-emerald-100 text-emerald-700",
   absent: "bg-rose-100 text-rose-700",
   late: "bg-amber-100 text-amber-700",
+  excused: "bg-blue-100 text-blue-700",
   neutral: "bg-slate-100 text-slate-700",
 };
 
@@ -163,11 +168,16 @@ export default function StudentDetailPage() {
     email: "",
     phone: "",
     level: "",
+    dob: "", 
     guardianName: "",
     guardianPhone: "",
     guardianEmail: "",
     profileImage: "",
   });
+
+  // Excuse Modal State
+  const [excuseModal, setExcuseModal] = useState(null);
+  const [excuseReason, setExcuseReason] = useState("");
 
   const buildProfileImage = async (file) => {
     if (!file || !file.type.startsWith("image/")) {
@@ -301,12 +311,21 @@ export default function StudentDetailPage() {
       const [splitFirst = "", ...rest] = fullName.split(" ");
       const splitLast = rest.join(" ");
 
+      let formattedDob = "";
+      if (loadedStudent?.dateOfBirth) {
+        const dobDate = new Date(loadedStudent.dateOfBirth);
+        if (!isNaN(dobDate.getTime())) {
+          formattedDob = dobDate.toISOString().split("T")[0];
+        }
+      }
+
       setFormData({
         firstName: loadedStudent?.firstName || splitFirst,
         lastName: loadedStudent?.lastName || splitLast,
         email: loadedStudent?.email || "",
         phone: loadedStudent?.phone || "",
         level: loadedStudent?.level || "",
+        dob: formattedDob, 
         guardianName: loadedStudent?.guardianName || "",
         guardianPhone: loadedStudent?.guardianPhone || "",
         guardianEmail: loadedStudent?.guardianEmail || "",
@@ -409,6 +428,7 @@ export default function StudentDetailPage() {
         email: formData.email.trim(),
         phone: formData.phone.trim(),
         level: formData.level.trim(),
+        dateOfBirth: formData.dob, 
         guardianName: formData.guardianName.trim(),
         guardianPhone: formData.guardianPhone.trim(),
         guardianEmail: formData.guardianEmail.trim(),
@@ -425,6 +445,38 @@ export default function StudentDetailPage() {
       setSaving(false);
     }
   };
+
+// In page.jsx, inside handleExcuseSubmit
+const handleExcuseSubmit = async () => {
+    setSaving(true);
+    try {
+      console.log("Attempting direct fetch...");
+      
+      const response = await fetch("http://localhost:4010/attendance/excuse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: studentId,
+          date: excuseModal.dateKey,
+          absenceReason: excuseReason
+        })
+      });
+
+      const result = await response.json();
+      console.log("Direct Fetch Result:", result);
+
+      if (response.ok) {
+        await loadMonthSnapshot(selectedMonthDate, studentId);
+        setExcuseModal(null);
+      } else {
+        console.error("Direct Fetch Failed:", result);
+      }
+    } catch (e) {
+      console.error("Network Error:", e);
+    } finally {
+      setSaving(false);
+    }
+};
 
   const attendanceMap = useMemo(() => {
     return buildMonthMap(monthRows, selectedMonthDate, toLocalDateKey(new Date()));
@@ -514,10 +566,23 @@ export default function StudentDetailPage() {
             {isEditMode ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Edit Mode</span> : null}
           </div>
 
+        <div className="flex items-center gap-3">
+            {!isEditMode && (
+              <button
+                onClick={() => router.push(`/students/${studentId}?edit=true`)}
+                className="inline-flex items-center cursor-pointer gap-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 shadow-xs"
+                type="button"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit Profile
+              </button>
+            )}
+
           <Link href="/students" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
             <ChevronLeft className="h-4 w-4" />
             Back to roster
           </Link>
+        </div>
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -535,7 +600,6 @@ export default function StudentDetailPage() {
                     <div className="grid h-20 w-20 place-items-center rounded-full bg-gray-300 text-2xl font-semibold text-slate-700 ring-4 ring-white shadow-sm">
                       {avatar}
                     </div>
-                    //  bg-linear-to-br from-slate-200 via-sky-100 to-slate-400
                   )}
                   <label className="absolute bottom-1 right-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full bg-sky-600 text-white ring-3 ring-white transition hover:bg-sky-600">
                     <Pencil className="h-3 w-3" />
@@ -552,9 +616,6 @@ export default function StudentDetailPage() {
                 <h1 className="mt-4 text-xl font-semibold text-slate-900">{fullName}</h1>
                 <p className="mt-1 text-sm text-slate-500">Faculty: {facultyName}</p>
                 <p className="mt-0.5 text-sm text-slate-500">Department: {departmentName}</p>
-                {/* <p className="mt-4 text-xs text-slate-500">
-                  {saving ? "Updating photo..." : "Use the edit icon on the photo to upload or replace the profile image."}
-                </p> */}
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-3">
@@ -571,60 +632,34 @@ export default function StudentDetailPage() {
 
             <section className="rounded-2xl border border-slate-200 bg-white py-3 px-6 shadow-xs">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Student Info</p>
-
               <div className="mt-4 space-y-4">
                 {isEditMode ? (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className="text-xs font-medium text-slate-600">First Name</label>
-                        <input
-                          name="firstName"
-                          value={formData.firstName}
-                          onChange={handleInputChange}
-                          className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                        />
+                        <input name="firstName" value={formData.firstName} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                       </div>
                       <div>
                         <label className="text-xs font-medium text-slate-600">Last Name</label>
-                        <input
-                          name="lastName"
-                          value={formData.lastName}
-                          onChange={handleInputChange}
-                          className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                        />
+                        <input name="lastName" value={formData.lastName} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                       </div>
                     </div>
-
+                    <div>
+                      <label className="text-xs font-medium text-slate-600">Date of Birth</label>
+                      <input name="dob" type="date" value={formData.dob} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
+                    </div>
                     <div>
                       <label className="text-xs font-medium text-slate-600">Email</label>
-                      <input
-                        name="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      />
+                      <input name="email" type="email" value={formData.email} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                     </div>
-
                     <div>
                       <label className="text-xs font-medium text-slate-600">Mobile</label>
-                      <input
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      />
+                      <input name="phone" value={formData.phone} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                     </div>
-
                     <div>
                       <label className="text-xs font-medium text-slate-600">Level</label>
-                      <select
-                        name="level"
-                        value={formData.level}
-                        onChange={handleInputChange}
-                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      >
+                      <select name="level" value={formData.level} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400">
                         <option value="">Select level</option>
                         <option value="Level 100">Level 100</option>
                         <option value="Level 200">Level 200</option>
@@ -638,14 +673,13 @@ export default function StudentDetailPage() {
                   <>
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-50 text-sky-700">
-                        <UserRound className="h-4 w-4" />
+                        <CalendarDays className="h-4 w-4" />
                       </span>
                       <div>
-                        <p className="text-sm font-semibold text-slate-800">{fullName}</p>
-                        <p className="text-sm text-slate-500">Student</p>
+                        <p className="text-sm font-medium text-slate-700">{student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }) : "Not provided"}</p>
+                        <p className="text-sm text-slate-500">Date of Birth</p>
                       </div>
                     </div>
-
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-50 text-sky-700">
                         <Mail className="h-4 w-4" />
@@ -655,7 +689,6 @@ export default function StudentDetailPage() {
                         <p className="text-sm text-slate-500">Email</p>
                       </div>
                     </div>
-
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-50 text-sky-700">
                         <Phone className="h-4 w-4" />
@@ -672,39 +705,20 @@ export default function StudentDetailPage() {
 
             <section className="rounded-2xl border border-slate-200 bg-white py-3 px-6 shadow-xs">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Guardian Info</p>
-
               <div className="mt-4 space-y-4">
                 {isEditMode ? (
                   <>
                     <div>
                       <label className="text-xs font-medium text-slate-600">Guardian Name</label>
-                      <input
-                        name="guardianName"
-                        value={formData.guardianName}
-                        onChange={handleInputChange}
-                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      />
+                      <input name="guardianName" value={formData.guardianName} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                     </div>
-
                     <div>
                       <label className="text-xs font-medium text-slate-600">Guardian Email</label>
-                      <input
-                        name="guardianEmail"
-                        type="email"
-                        value={formData.guardianEmail}
-                        onChange={handleInputChange}
-                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      />
+                      <input name="guardianEmail" type="email" value={formData.guardianEmail} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                     </div>
-
                     <div>
                       <label className="text-xs font-medium text-slate-600">Guardian Phone</label>
-                      <input
-                        name="guardianPhone"
-                        value={formData.guardianPhone}
-                        onChange={handleInputChange}
-                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      />
+                      <input name="guardianPhone" value={formData.guardianPhone} onChange={handleInputChange} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400" />
                     </div>
                   </>
                 ) : (
@@ -718,7 +732,6 @@ export default function StudentDetailPage() {
                         <p className="text-sm text-slate-500">Guardian</p>
                       </div>
                     </div>
-
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-50 text-sky-700">
                         <Mail className="h-4 w-4" />
@@ -728,7 +741,6 @@ export default function StudentDetailPage() {
                         <p className="text-sm text-slate-500">Guardian Email</p>
                       </div>
                     </div>
-
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-50 text-sky-700">
                         <Phone className="h-4 w-4" />
@@ -752,52 +764,32 @@ export default function StudentDetailPage() {
                   Monthly Attendance Snapshot
                 </div>
                 <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-                  <button
-                    onClick={handlePreviousMonth}
-                    className="grid h-7 w-7 place-items-center rounded-md text-slate-600 transition hover:bg-white hover:text-slate-800"
-                    aria-label="View previous month"
-                    type="button"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
+                  <button onClick={handlePreviousMonth} className="grid h-7 w-7 place-items-center rounded-md text-slate-600 transition hover:bg-white hover:text-slate-800" type="button"><ChevronLeft className="h-4 w-4" /></button>
                   <span className="min-w-36 px-2 text-center text-sm font-semibold text-slate-700">{monthLabel}</span>
-                  <button
-                    onClick={handleNextMonth}
-                    disabled={!canGoToNextMonth}
-                    className="grid h-7 w-7 place-items-center rounded-md text-slate-600 transition hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-300"
-                    aria-label="View next month"
-                    type="button"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  <button onClick={handleNextMonth} disabled={!canGoToNextMonth} className="grid h-7 w-7 place-items-center rounded-md text-slate-600 transition hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-300" type="button"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
 
-              {monthError ? (
-                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{monthError}</div>
-              ) : null}
+              {monthError ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{monthError}</div> : null}
 
               <div className="mt-6 grid grid-cols-7 gap-2 text-center text-sm font-semibold text-slate-500">
-                {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((day) => (
-                  <div key={day}>{day}</div>
-                ))}
+                {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((day) => <div key={day}>{day}</div>)}
               </div>
 
               <div className="mt-3 grid grid-cols-7 gap-2">
-                {Array.from({ length: firstDayOffset }, (_, index) => (
-                  <div key={`offset-${index}`} className="h-13 rounded-xl border border-transparent bg-transparent" aria-hidden="true" />
-                ))}
+                {Array.from({ length: firstDayOffset }, (_, index) => <div key={`offset-${index}`} className="h-13 rounded-xl border border-transparent bg-transparent" aria-hidden="true" />)}
                 {monthDays.map((day) => {
                   const dayDateKey = `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                   const statusKey = attendanceMap[day] || "neutral";
                   const tone = dayStyles[statusKey] || dayStyles.neutral;
                   const isSelected = selectedDateKey === dayDateKey;
+                  const isAbsent = statusKey === "absent" && dayDateKey <= toLocalDateKey();
                   return (
                     <button
                       key={day}
                       type="button"
-                      onClick={() => setSelectedDateKey(dayDateKey)}
-                      className={`flex h-13 flex-col items-center justify-center rounded-xl border text-sm font-medium transition outline-none focus-visible:outline-none ${tone} ${isSelected ? "border-sky-300 ring-2 ring-sky-100" : "border-transparent"}`}
+                      onClick={() => isAbsent ? setExcuseModal({ dateKey: dayDateKey }) : setSelectedDateKey(dayDateKey)}
+                      className={`flex h-13 flex-col items-center justify-center rounded-xl border text-sm font-medium transition outline-none ${tone} ${isSelected ? "border-sky-300 ring-2 ring-sky-100" : "border-transparent"}`}
                     >
                       <span>{day}</span>
                     </button>
@@ -809,6 +801,7 @@ export default function StudentDetailPage() {
                 <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />On-time</span>
                 <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />Late</span>
                 <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Absent</span>
+                <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" />Excused</span>
               </div>
             </section>
 
@@ -823,17 +816,10 @@ export default function StudentDetailPage() {
 
               <div className="mt-2 grid gap-4 rounded-full bg-slate-50 p-4 md:grid-cols-[100px_minmax(0,1fr)_180px]">
                 <div className="grid h-24 w-full rounded-full place-items-center bg-gray-300 text-lg font-semibold text-white">
-                  {/* bg-linear-to-br from-slate-700 via-sky-900 to-slate-950 */}
                   {profileImage ? (
-                    <img
-                      src={profileImage}
-                      alt={`${fullName} profile`}
-                      className="h-full w-full rounded-full object-cover  shadow-sm"
-                    />
+                    <img src={profileImage} alt={`${fullName} profile`} className="h-full w-full rounded-full object-cover shadow-sm" />
                   ) : (
-                    <div className="grid place-items-center rounded-full bg-transparent text-2xl font-semibold text-sky-700">
-                      {avatar}
-                    </div>
+                    <div className="grid place-items-center rounded-full bg-transparent text-2xl font-semibold text-sky-700">{avatar}</div>
                   )}
                 </div>
 
@@ -854,51 +840,58 @@ export default function StudentDetailPage() {
                     <p className="text-sm text-slate-500">Record Date</p>
                     <p className="font-semibold text-slate-900">{selectedDateKey || "--"}</p>
                   </div>
+                  {selectedRow?.status === "Excused" && (
+                   <div className="sm:col-span-2">
+                      <p className="text-sm text-slate-500">Reason</p>
+                      <p className="font-semibold text-slate-900">{selectedRow?.absenceReason || "No reason provided"}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col justify-center gap-3">
                   {isEditMode ? (
                     <>
-                      <button
-                        onClick={handleSaveChanges}
-                        disabled={saving}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-                      >
-                        <ShieldCheck className="h-4 w-4" />
+                      <button onClick={handleSaveChanges} disabled={saving} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
                         {saving ? "Saving..." : "Save Changes"}
                       </button>
-                      <Link
-                        href={`/students/${studentId}`}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Cancel Edit
-                      </Link>
+                      <Link href={`/students/${studentId}`} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Cancel</Link>
                     </>
                   ) : (
                     <>
-                      <div className="inline-flex items-center justify-center rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700">
-                        {lastUpdatedLabel}
-                      </div>
+                      <div className="inline-flex items-center justify-center rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700">{lastUpdatedLabel}</div>
                       <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
-                        <Download className="h-4 w-4" />
-                        Export Report
+                        <Download className="h-4 w-4" /> Export
                       </button>
                     </>
                   )}
                 </div>
               </div>
 
-              {saveError ? (
-                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{saveError}</div>
-              ) : null}
-
-              {saveSuccess ? (
-                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{saveSuccess}</div>
-              ) : null}
+              {saveError ? <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{saveError}</div> : null}
+              {saveSuccess ? <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{saveSuccess}</div> : null}
             </section>
           </div>
         </div>
       </div>
+
+      {/* Excuse Modal */}
+      {excuseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-slate-800">Mark as Excused</h3>
+            <textarea
+              value={excuseReason}
+              onChange={(e) => setExcuseReason(e.target.value)}
+              className="mt-4 w-full rounded-lg border p-2 text-sm"
+              placeholder="Reason for excuse..."
+            />
+            <div className="mt-6 flex gap-3">
+              <button onClick={handleExcuseSubmit} className="flex-1 rounded-lg bg-sky-700 py-2 text-white text-sm font-semibold">Confirm</button>
+              <button onClick={() => setExcuseModal(null)} className="flex-1 rounded-lg border py-2 text-sm font-semibold">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
